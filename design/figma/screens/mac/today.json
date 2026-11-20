@@ -3,123 +3,695 @@
   "title": "Today",
   "area": "mac",
   "presentation": "tab",
-  "device": { "w": 1280, "h": 800 },
-  "source": ["apps/mac/Teyla/UI/TodayView.swift:12", "apps/mac/Teyla/UI/MainView.swift:133"],
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/UI/TodayView.swift:12",
+    "apps/mac/Teyla/UI/ActivityView.swift:60",
+    "apps/mac/Teyla/UI/MainView.swift:133"
+  ],
   "capture": "docs/img/mac/today-light.png",
-  "root": { "t": "use", "c": "macWindow", "p": {
-    "selected": "today",
-    "badges": { "today": 4, "decisions": 6, "operations": 1 },
-    "linked": ["today"],
-    "kids": [
-      { "t": "h", "w": "fill", "align": "start", "kids": [
-        { "t": "v", "gap": 2, "kids": [
-          { "t": "text", "v": "Today", "s": "mac-page-title" },
-          { "t": "text", "v": "Friday, 20 November · week ends in 2 days", "s": "mac-body", "c": "text-secondary" }
-        ]},
-        { "t": "spacer" },
-        { "t": "h", "name": "Strip", "gap": 16, "align": "center", "kids": [
-          { "t": "h", "gap": 8, "align": "center", "kids": [
-            { "t": "text", "v": "Sent", "s": "mac-body", "c": "text-secondary" },
-            { "t": "h", "gap": 2, "kids": [
-              { "t": "v", "w": 8, "h": 8, "r": 1, "fill": "text" }, { "t": "v", "w": 8, "h": 8, "r": 1, "fill": "text" },
-              { "t": "v", "w": 8, "h": 8, "r": 1, "fill": "text" }, { "t": "v", "w": 8, "h": 8, "r": 1, "fill": "text" },
-              { "t": "v", "w": 8, "h": 8, "r": 1, "fill": "track" }, { "t": "v", "w": 8, "h": 8, "r": 1, "fill": "track" },
-              { "t": "v", "w": 8, "h": 8, "r": 1, "fill": "track" }, { "t": "v", "w": 8, "h": 8, "r": 1, "fill": "track" }
-            ]},
-            { "t": "text", "v": "4 of 8", "s": "mac-body", "weight": 600 }
-          ]},
-          { "t": "v", "w": 1, "h": 18, "fill": "border" },
-          { "t": "h", "gap": 6, "kids": [
-            { "t": "text", "v": "Came back", "s": "mac-body", "c": "text-secondary" },
-            { "t": "text", "v": "3 waiting", "s": "mac-body", "weight": 600 }
-          ]},
-          { "t": "v", "w": 1, "h": 18, "fill": "border" },
-          { "t": "h", "gap": 6, "kids": [
-            { "t": "text", "v": "Prepared", "s": "mac-body", "c": "text-secondary" },
-            { "t": "text", "v": "12", "s": "mac-body", "weight": 600 }
-          ]}
-        ]}
-      ]},
-      { "t": "use", "c": "card", "p": { "gap": 14, "pad": 22, "kids": [
-        { "t": "h", "w": "fill", "align": "start", "kids": [
-          { "t": "v", "gap": 2, "w": "fill", "kids": [
-            { "t": "text", "v": "Paying teams for Atlas", "s": "mac-section" },
-            { "t": "text", "v": "Ten teams on the paid plan · 1 February · 10 weeks left", "s": "mac-body", "c": "text-secondary" }
-          ]},
-          { "t": "use", "c": "pill", "p": { "text": "Behind this week · 3 short", "tone": "needs-you" } }
-        ]},
-        { "t": "h", "w": "fill", "align": "center", "kids": [
-          { "t": "text", "v": "Demos", "s": "mac-body", "w": 140 },
-          { "t": "use", "c": "circles", "p": { "done": 2, "total": 6 } },
-          { "t": "spacer" },
-          { "t": "text", "v": "2 of 6", "s": "mac-body", "weight": 600 }
-        ]},
-        { "t": "h", "w": "fill", "align": "center", "kids": [
-          { "t": "text", "v": "Trials started", "s": "mac-body", "w": 140 },
-          { "t": "use", "c": "circles", "p": { "done": 1, "total": 3 } },
-          { "t": "spacer" },
-          { "t": "text", "v": "1 of 3", "s": "mac-body", "weight": 600 }
-        ]},
-        { "t": "h", "w": "fill", "align": "center", "kids": [
-          { "t": "text", "v": "Paid", "s": "mac-body", "w": 140 },
-          { "t": "use", "c": "circles", "p": { "done": 0, "total": 1 } },
-          { "t": "spacer" },
-          { "t": "text", "v": "0 of 1", "s": "mac-body", "weight": 600 }
-        ]},
-        { "t": "v", "w": "fill", "h": 1, "fill": "border" },
-        { "t": "h", "w": "fill", "align": "center", "gap": 16, "kids": [
-          { "t": "v", "gap": 2, "w": "fill", "kids": [
-            { "t": "text", "v": "Next for this goal", "s": "mac-caption", "c": "text-secondary" },
-            { "t": "text", "v": "3 replies to answer, then 4 drafts for this goal", "s": "mac-card-title" },
-            { "t": "text", "v": "Replies first: they are conversations already started.", "s": "mac-caption", "c": "text-secondary" }
-          ]},
-          { "t": "text", "v": "Log a demo", "s": "mac-body", "c": "primary" },
-          { "t": "h", "name": "Button Answer replies", "gap": 6, "pad": [6, 14], "r": "chip", "fill": "primary", "align": "center", "kids": [
-            { "t": "text", "v": "Answer replies", "s": "mac-body", "c": "on-primary", "weight": 600 },
-            { "t": "icon", "n": "return", "size": 11, "c": "on-primary" }
-          ]}
-        ]}
-      ]}},
-      { "t": "use", "c": "card", "p": { "gap": 0, "pad": [6, 22], "kids": [
-        { "t": "h", "w": "fill", "align": "center", "pad": [12, 0], "kids": [
-          { "t": "v", "gap": 2, "w": 300, "kids": [
-            { "t": "text", "v": "Testers on Pebble", "s": "mac-card-title" },
-            { "t": "text", "v": "No deadline", "s": "mac-caption", "c": "text-secondary" }
-          ]},
-          { "t": "use", "c": "circles", "p": { "done": 3, "total": 10 } },
-          { "t": "spacer" },
-          { "t": "text", "v": "3 of 10 · source not connected", "s": "mac-caption", "c": "text-secondary" }
-        ]},
-        { "t": "v", "w": "fill", "h": 1, "fill": "border" },
-        { "t": "h", "w": "fill", "align": "center", "pad": [12, 0], "kids": [
-          { "t": "v", "gap": 2, "w": 300, "kids": [
-            { "t": "text", "v": "Readers for Quill", "s": "mac-card-title" },
-            { "t": "text", "v": "No deadline", "s": "mac-caption", "c": "text-secondary" }
-          ]},
-          { "t": "text", "v": "What would count as progress this week?", "s": "mac-body", "c": "text-secondary" },
-          { "t": "spacer" },
-          { "t": "h", "pad": [4, 10], "r": "mac-control", "fill": "track", "kids": [
-            { "t": "text", "v": "Set a number", "s": "mac-body" }
-          ]}
-        ]}
-      ]}},
-      { "t": "use", "c": "card", "p": { "gap": 12, "pad": 20, "kids": [
-        { "t": "h", "w": "fill", "align": "center", "kids": [
-          { "t": "v", "gap": 2, "w": "fill", "kids": [
-            { "t": "text", "v": "Activity", "s": "mac-section" },
-            { "t": "text", "v": "Every post, comment, email and meeting counts as +1.", "s": "mac-caption", "c": "text-secondary" }
-          ]},
-          { "t": "h", "gap": 6, "pad": [4, 10], "r": "mac-control", "fill": "track", "align": "center", "kids": [
-            { "t": "icon", "n": "plus", "size": 12 }, { "t": "text", "v": "+1", "s": "mac-body" }
-          ]}
-        ]},
-        { "t": "use", "c": "activityGrid", "p": { "weeks": 40, "seed": 2 } },
-        { "t": "text", "v": "214 in the last year · today 3 · streak 4 days (longest 9)", "s": "mac-body" }
-      ]}},
-      { "t": "h", "gap": 6, "align": "center", "kids": [
-        { "t": "v", "w": 6, "h": 6, "r": 3, "fill": "needs-you" },
-        { "t": "text", "v": "1 source not connected", "s": "mac-caption", "c": "text-secondary" }
-      ]}
-    ]
-  }}
+  "root": {
+    "t": "use",
+    "c": "macWindow",
+    "p": {
+      "selected": "today",
+      "badges": {
+        "today": 4,
+        "decisions": 4,
+        "operations": 1
+      },
+      "linked": [
+        "today",
+        "home",
+        "decisions",
+        "products",
+        "settings"
+      ],
+      "kids": [
+        {
+          "t": "h",
+          "w": "fill",
+          "align": "start",
+          "kids": [
+            {
+              "t": "v",
+              "gap": 2,
+              "kids": [
+                {
+                  "t": "text",
+                  "v": "Today",
+                  "s": "mac-page-title"
+                },
+                {
+                  "t": "text",
+                  "v": "Friday, 20 November · week ends in 2 days",
+                  "s": "mac-body",
+                  "c": "text-secondary"
+                }
+              ]
+            },
+            {
+              "t": "spacer"
+            },
+            {
+              "t": "h",
+              "name": "Strip",
+              "gap": 16,
+              "align": "center",
+              "kids": [
+                {
+                  "t": "h",
+                  "gap": 8,
+                  "align": "center",
+                  "kids": [
+                    {
+                      "t": "text",
+                      "v": "Sent",
+                      "s": "mac-body",
+                      "c": "text-secondary"
+                    },
+                    {
+                      "t": "h",
+                      "gap": 2,
+                      "kids": [
+                        {
+                          "t": "v",
+                          "w": 8,
+                          "h": 8,
+                          "r": 1,
+                          "fill": "text"
+                        },
+                        {
+                          "t": "v",
+                          "w": 8,
+                          "h": 8,
+                          "r": 1,
+                          "fill": "text"
+                        },
+                        {
+                          "t": "v",
+                          "w": 8,
+                          "h": 8,
+                          "r": 1,
+                          "fill": "text"
+                        },
+                        {
+                          "t": "v",
+                          "w": 8,
+                          "h": 8,
+                          "r": 1,
+                          "fill": "text"
+                        },
+                        {
+                          "t": "v",
+                          "w": 8,
+                          "h": 8,
+                          "r": 1,
+                          "fill": "track"
+                        },
+                        {
+                          "t": "v",
+                          "w": 8,
+                          "h": 8,
+                          "r": 1,
+                          "fill": "track"
+                        },
+                        {
+                          "t": "v",
+                          "w": 8,
+                          "h": 8,
+                          "r": 1,
+                          "fill": "track"
+                        },
+                        {
+                          "t": "v",
+                          "w": 8,
+                          "h": 8,
+                          "r": 1,
+                          "fill": "track"
+                        }
+                      ]
+                    },
+                    {
+                      "t": "text",
+                      "v": "4 of 8",
+                      "s": "mac-body",
+                      "weight": 600
+                    }
+                  ]
+                },
+                {
+                  "t": "v",
+                  "w": 1,
+                  "h": 18,
+                  "fill": "border"
+                },
+                {
+                  "t": "h",
+                  "gap": 6,
+                  "kids": [
+                    {
+                      "t": "text",
+                      "v": "Came back",
+                      "s": "mac-body",
+                      "c": "text-secondary"
+                    },
+                    {
+                      "t": "text",
+                      "v": "3 waiting",
+                      "s": "mac-body",
+                      "weight": 600
+                    }
+                  ]
+                },
+                {
+                  "t": "v",
+                  "w": 1,
+                  "h": 18,
+                  "fill": "border"
+                },
+                {
+                  "t": "h",
+                  "gap": 6,
+                  "kids": [
+                    {
+                      "t": "text",
+                      "v": "Prepared",
+                      "s": "mac-body",
+                      "c": "text-secondary"
+                    },
+                    {
+                      "t": "text",
+                      "v": "12",
+                      "s": "mac-body",
+                      "weight": 600
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "t": "use",
+          "c": "card",
+          "p": {
+            "gap": 14,
+            "pad": 22,
+            "kids": [
+              {
+                "t": "h",
+                "w": "fill",
+                "align": "start",
+                "kids": [
+                  {
+                    "t": "v",
+                    "gap": 2,
+                    "w": "fill",
+                    "kids": [
+                      {
+                        "t": "text",
+                        "v": "Paying teams for Atlas",
+                        "s": "mac-section"
+                      },
+                      {
+                        "t": "text",
+                        "v": "Ten teams on the paid plan · 1 February · 10 weeks left",
+                        "s": "mac-body",
+                        "c": "text-secondary"
+                      }
+                    ]
+                  },
+                  {
+                    "t": "use",
+                    "c": "pill",
+                    "p": {
+                      "text": "Behind this week · 3 short",
+                      "tone": "needs-you"
+                    }
+                  }
+                ]
+              },
+              {
+                "t": "h",
+                "w": "fill",
+                "align": "center",
+                "kids": [
+                  {
+                    "t": "text",
+                    "v": "Demos",
+                    "s": "mac-body",
+                    "w": 140
+                  },
+                  {
+                    "t": "use",
+                    "c": "circles",
+                    "p": {
+                      "done": 2,
+                      "total": 6
+                    }
+                  },
+                  {
+                    "t": "spacer"
+                  },
+                  {
+                    "t": "text",
+                    "v": "2 of 6",
+                    "s": "mac-body",
+                    "weight": 600
+                  }
+                ]
+              },
+              {
+                "t": "h",
+                "w": "fill",
+                "align": "center",
+                "kids": [
+                  {
+                    "t": "text",
+                    "v": "Trials started",
+                    "s": "mac-body",
+                    "w": 140
+                  },
+                  {
+                    "t": "use",
+                    "c": "circles",
+                    "p": {
+                      "done": 1,
+                      "total": 3
+                    }
+                  },
+                  {
+                    "t": "spacer"
+                  },
+                  {
+                    "t": "text",
+                    "v": "1 of 3",
+                    "s": "mac-body",
+                    "weight": 600
+                  }
+                ]
+              },
+              {
+                "t": "h",
+                "w": "fill",
+                "align": "center",
+                "kids": [
+                  {
+                    "t": "text",
+                    "v": "Paid",
+                    "s": "mac-body",
+                    "w": 140
+                  },
+                  {
+                    "t": "use",
+                    "c": "circles",
+                    "p": {
+                      "done": 0,
+                      "total": 1
+                    }
+                  },
+                  {
+                    "t": "spacer"
+                  },
+                  {
+                    "t": "text",
+                    "v": "0 of 1",
+                    "s": "mac-body",
+                    "weight": 600
+                  }
+                ]
+              },
+              {
+                "t": "v",
+                "w": "fill",
+                "h": 1,
+                "fill": "border"
+              },
+              {
+                "t": "h",
+                "w": "fill",
+                "align": "center",
+                "gap": 16,
+                "kids": [
+                  {
+                    "t": "v",
+                    "gap": 2,
+                    "w": "fill",
+                    "kids": [
+                      {
+                        "t": "text",
+                        "v": "Next for this goal",
+                        "s": "mac-caption",
+                        "c": "text-secondary"
+                      },
+                      {
+                        "t": "text",
+                        "v": "3 replies to answer, then 4 drafts for this goal",
+                        "s": "mac-card-title"
+                      },
+                      {
+                        "t": "text",
+                        "v": "Replies first: they are conversations already started.",
+                        "s": "mac-caption",
+                        "c": "text-secondary"
+                      }
+                    ]
+                  },
+                  {
+                    "t": "text",
+                    "v": "Log a demo",
+                    "s": "mac-body",
+                    "c": "primary"
+                  },
+                  {
+                    "t": "h",
+                    "name": "Button Answer replies",
+                    "gap": 6,
+                    "pad": [
+                      6,
+                      14
+                    ],
+                    "r": "chip",
+                    "fill": "primary",
+                    "align": "center",
+                    "kids": [
+                      {
+                        "t": "text",
+                        "v": "Answer replies",
+                        "s": "mac-body",
+                        "c": "on-primary",
+                        "weight": 600
+                      },
+                      {
+                        "t": "icon",
+                        "n": "return",
+                        "size": 11,
+                        "c": "on-primary"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "t": "use",
+          "c": "card",
+          "p": {
+            "gap": 0,
+            "pad": [
+              6,
+              22
+            ],
+            "kids": [
+              {
+                "t": "h",
+                "w": "fill",
+                "align": "center",
+                "pad": [
+                  12,
+                  0
+                ],
+                "kids": [
+                  {
+                    "t": "v",
+                    "gap": 2,
+                    "w": 300,
+                    "kids": [
+                      {
+                        "t": "text",
+                        "v": "Testers on Pebble",
+                        "s": "mac-card-title"
+                      },
+                      {
+                        "t": "text",
+                        "v": "No deadline",
+                        "s": "mac-caption",
+                        "c": "text-secondary"
+                      }
+                    ]
+                  },
+                  {
+                    "t": "use",
+                    "c": "circles",
+                    "p": {
+                      "done": 3,
+                      "total": 10
+                    }
+                  },
+                  {
+                    "t": "spacer"
+                  },
+                  {
+                    "t": "text",
+                    "v": "3 of 10 · source not connected",
+                    "s": "mac-caption",
+                    "c": "text-secondary"
+                  }
+                ]
+              },
+              {
+                "t": "v",
+                "w": "fill",
+                "h": 1,
+                "fill": "border"
+              },
+              {
+                "t": "h",
+                "w": "fill",
+                "align": "center",
+                "pad": [
+                  12,
+                  0
+                ],
+                "kids": [
+                  {
+                    "t": "v",
+                    "gap": 2,
+                    "w": 300,
+                    "kids": [
+                      {
+                        "t": "text",
+                        "v": "Readers for Quill",
+                        "s": "mac-card-title"
+                      },
+                      {
+                        "t": "text",
+                        "v": "No deadline",
+                        "s": "mac-caption",
+                        "c": "text-secondary"
+                      }
+                    ]
+                  },
+                  {
+                    "t": "text",
+                    "v": "What would count as progress this week?",
+                    "s": "mac-body",
+                    "c": "text-secondary"
+                  },
+                  {
+                    "t": "spacer"
+                  },
+                  {
+                    "t": "h",
+                    "pad": [
+                      4,
+                      10
+                    ],
+                    "r": "mac-control",
+                    "fill": "track",
+                    "kids": [
+                      {
+                        "t": "text",
+                        "v": "Set a number",
+                        "s": "mac-body"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "t": "use",
+          "c": "card",
+          "p": {
+            "gap": 12,
+            "pad": 20,
+            "kids": [
+              {
+                "t": "h",
+                "w": "fill",
+                "align": "center",
+                "kids": [
+                  {
+                    "t": "v",
+                    "gap": 2,
+                    "w": "fill",
+                    "kids": [
+                      {
+                        "t": "text",
+                        "v": "Activity",
+                        "s": "mac-section"
+                      },
+                      {
+                        "t": "text",
+                        "v": "Every post, comment, email and meeting counts as +1.",
+                        "s": "mac-caption",
+                        "c": "text-secondary"
+                      }
+                    ]
+                  },
+                  {
+                    "t": "h",
+                    "gap": 6,
+                    "pad": [
+                      4,
+                      10
+                    ],
+                    "r": "mac-control",
+                    "fill": "track",
+                    "align": "center",
+                    "kids": [
+                      {
+                        "t": "icon",
+                        "n": "plus",
+                        "size": 12
+                      },
+                      {
+                        "t": "text",
+                        "v": "+1",
+                        "s": "mac-body"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "t": "use",
+                "c": "activityGrid",
+                "p": {
+                  "weeks": 40,
+                  "seed": 2
+                }
+              },
+              {
+                "t": "h",
+                "w": "fill",
+                "gap": 8,
+                "align": "center",
+                "kids": [
+                  {
+                    "t": "text",
+                    "v": "Mon · Wed · Fri",
+                    "s": "mac-caption",
+                    "c": "text-secondary"
+                  },
+                  {
+                    "t": "spacer"
+                  },
+                  {
+                    "t": "text",
+                    "v": "Less",
+                    "s": "mac-caption",
+                    "c": "text-secondary"
+                  },
+                  {
+                    "t": "h",
+                    "gap": 3,
+                    "kids": [
+                      {
+                        "t": "v",
+                        "w": 11,
+                        "h": 11,
+                        "r": 2,
+                        "fill": "border@0.45"
+                      },
+                      {
+                        "t": "v",
+                        "w": 11,
+                        "h": 11,
+                        "r": 2,
+                        "fill": "primary@0.3"
+                      },
+                      {
+                        "t": "v",
+                        "w": 11,
+                        "h": 11,
+                        "r": 2,
+                        "fill": "primary@0.5"
+                      },
+                      {
+                        "t": "v",
+                        "w": 11,
+                        "h": 11,
+                        "r": 2,
+                        "fill": "primary@0.75"
+                      },
+                      {
+                        "t": "v",
+                        "w": 11,
+                        "h": 11,
+                        "r": 2,
+                        "fill": "primary"
+                      }
+                    ]
+                  },
+                  {
+                    "t": "text",
+                    "v": "More",
+                    "s": "mac-caption",
+                    "c": "text-secondary"
+                  }
+                ]
+              },
+              {
+                "t": "text",
+                "v": "214 in the last year · today 3 · streak 4 days (longest 9)",
+                "s": "mac-body"
+              }
+            ]
+          }
+        },
+        {
+          "t": "h",
+          "gap": 6,
+          "align": "center",
+          "kids": [
+            {
+              "t": "icon",
+              "n": "chevron.right",
+              "size": 11,
+              "c": "text-secondary"
+            },
+            {
+              "t": "v",
+              "w": 6,
+              "h": 6,
+              "r": 3,
+              "fill": "needs-you"
+            },
+            {
+              "t": "text",
+              "v": "Checks · 4",
+              "s": "mac-card-title",
+              "c": "text-secondary"
+            },
+            {
+              "t": "text",
+              "v": "1 source not connected",
+              "s": "mac-caption",
+              "c": "text-secondary"
+            }
+          ]
+        }
+      ]
+    }
+  }
 }

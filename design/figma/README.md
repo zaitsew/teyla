@@ -68,3 +68,5 @@ The node format (`v`, `h`, `z`, `text`, `icon`, `img`, `spacer`, `use`) is the g
 | `dark` | draws its `kids` (composites included) in the dark values: the file has one variable mode |
 
 An area adds its own composites in `components/<area>.mjs`; a name may be defined once across the folder.
+
+`components/mac.mjs` (Mac app, all prefixed `mac`): `macBtn`, `macChip`, `macField`, `macSegment`, `macFold`, `macPageHeader`, `macSection`, `macEmpty`, `macError`, `macAsk` (the ask card and its states), `macProductIcon`, `macSpark`, `macHero`, `macBuilt`, `macQuiet`, `macRowGroup`, `macRow`, `macSheet`, `macPopover`, `macQuickNote`, `macCommandBar`, `macBare`, `macQr`.

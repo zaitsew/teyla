@@ -1,0 +1,94 @@
+{
+  "id": "mac.decisions-older",
+  "title": "Decisions, Older open",
+  "area": "mac",
+  "presentation": "tab",
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/UI/OlderGroup.swift:49",
+    "apps/mac/Teyla/UI/AskCard.swift:100"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macWindow",
+    "p": {
+      "selected": "decisions",
+      "badges": {
+        "today": 4,
+        "decisions": 4,
+        "operations": 1
+      },
+      "linked": [
+        "today",
+        "home",
+        "decisions",
+        "products",
+        "settings"
+      ],
+      "kids": [
+        {
+          "t": "v",
+          "w": 720,
+          "gap": 24,
+          "kids": [
+            {
+              "t": "use",
+              "c": "macPageHeader",
+              "p": {
+                "title": "Decisions",
+                "context": "Nothing new. The rest waited more than 7 days."
+              }
+            },
+            {
+              "t": "use",
+              "c": "macFold",
+              "p": {
+                "title": "Older · 2",
+                "detail": "waiting more than 7 days",
+                "open": true,
+                "kids": [
+                  {
+                    "t": "use",
+                    "c": "macAsk",
+                    "p": {
+                      "product": "Orbit",
+                      "age": "12 days",
+                      "question": "Archive the old Orbit prototype repository?",
+                      "context": "Nothing has changed in it since 3 October.",
+                      "proposal": "Archive it and keep the name.",
+                      "options": [],
+                      "older": true
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "macAsk",
+                    "p": {
+                      "product": "Pebble",
+                      "age": "9 days",
+                      "question": "Keep the beta waiting list open?",
+                      "context": "Eleven people joined it in October.",
+                      "proposal": "Close it and email the eleven.",
+                      "options": [],
+                      "older": true
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "t": "use",
+              "c": "macFold",
+              "p": {
+                "title": "Done since yesterday · 6"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

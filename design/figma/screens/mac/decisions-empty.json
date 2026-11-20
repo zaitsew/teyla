@@ -1,0 +1,211 @@
+{
+  "id": "mac.decisions-empty",
+  "title": "Decisions, nothing waits",
+  "area": "mac",
+  "presentation": "tab",
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/UI/DecisionsView.swift:42"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macWindow",
+    "p": {
+      "selected": "decisions",
+      "badges": {
+        "today": 4,
+        "operations": 1
+      },
+      "linked": [
+        "today",
+        "home",
+        "decisions",
+        "products",
+        "settings"
+      ],
+      "kids": [
+        {
+          "t": "v",
+          "w": 720,
+          "gap": 24,
+          "kids": [
+            {
+              "t": "use",
+              "c": "macPageHeader",
+              "p": {
+                "title": "Decisions",
+                "context": "Nothing waits on you."
+              }
+            },
+            {
+              "t": "use",
+              "c": "macFold",
+              "p": {
+                "title": "Done since yesterday · 6",
+                "open": true,
+                "kids": [
+                  {
+                    "t": "v",
+                    "w": "fill",
+                    "gap": 8,
+                    "pad": 16,
+                    "r": "card",
+                    "fill": "surface",
+                    "stroke": "border",
+                    "kids": [
+                      {
+                        "t": "h",
+                        "gap": 8,
+                        "align": "center",
+                        "kids": [
+                          {
+                            "t": "use",
+                            "c": "macChip",
+                            "p": {
+                              "text": "Done",
+                              "tone": "saving"
+                            }
+                          },
+                          {
+                            "t": "text",
+                            "v": "Atlas · 4 h",
+                            "s": "mac-caption",
+                            "c": "text-secondary"
+                          }
+                        ]
+                      },
+                      {
+                        "t": "text",
+                        "v": "Pricing page is live",
+                        "s": "mac-card-title",
+                        "c": "text",
+                        "w": "fill"
+                      },
+                      {
+                        "t": "text",
+                        "v": "The page now lists the free and paid plans.",
+                        "s": "mac-body",
+                        "c": "text-secondary",
+                        "w": "fill"
+                      },
+                      {
+                        "t": "text",
+                        "v": "The checkout link opens in the same tab.",
+                        "s": "mac-body",
+                        "c": "text-secondary",
+                        "w": "fill"
+                      },
+                      {
+                        "t": "h",
+                        "w": "fill",
+                        "align": "center",
+                        "kids": [
+                          {
+                            "t": "text",
+                            "v": "github.com/atlas/pull/41",
+                            "s": "mac-body",
+                            "c": "primary"
+                          },
+                          {
+                            "t": "spacer"
+                          },
+                          {
+                            "t": "use",
+                            "c": "macBtn",
+                            "p": {
+                              "text": "Open session"
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "t": "v",
+                    "w": "fill",
+                    "gap": 8,
+                    "pad": 16,
+                    "r": "card",
+                    "fill": "surface",
+                    "stroke": "border",
+                    "kids": [
+                      {
+                        "t": "h",
+                        "gap": 8,
+                        "align": "center",
+                        "kids": [
+                          {
+                            "t": "use",
+                            "c": "macChip",
+                            "p": {
+                              "text": "Review ready",
+                              "tone": "primary"
+                            }
+                          },
+                          {
+                            "t": "text",
+                            "v": "Pebble · 6 h",
+                            "s": "mac-caption",
+                            "c": "text-secondary"
+                          }
+                        ]
+                      },
+                      {
+                        "t": "text",
+                        "v": "Sync fix ready for review",
+                        "s": "mac-card-title",
+                        "c": "text",
+                        "w": "fill"
+                      },
+                      {
+                        "t": "text",
+                        "v": "Two files changed. Tests pass.",
+                        "s": "mac-body",
+                        "c": "text-secondary",
+                        "w": "fill"
+                      },
+                      {
+                        "t": "text",
+                        "v": "Needs: your review",
+                        "s": "mac-body",
+                        "c": "text",
+                        "weight": 500,
+                        "w": "fill"
+                      },
+                      {
+                        "t": "h",
+                        "w": "fill",
+                        "align": "center",
+                        "kids": [
+                          {
+                            "t": "text",
+                            "v": "github.com/atlas/pull/41",
+                            "s": "mac-body",
+                            "c": "primary"
+                          },
+                          {
+                            "t": "spacer"
+                          },
+                          {
+                            "t": "use",
+                            "c": "macBtn",
+                            "p": {
+                              "text": "Open session"
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

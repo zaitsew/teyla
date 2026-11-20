@@ -1,0 +1,161 @@
+{
+  "id": "mac.home-running",
+  "title": "Home, Running now open",
+  "area": "mac",
+  "presentation": "tab",
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/UI/HomeView.swift:353"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macWindow",
+    "p": {
+      "selected": "home",
+      "badges": {
+        "today": 4,
+        "decisions": 4,
+        "operations": 1
+      },
+      "linked": [
+        "today",
+        "home",
+        "decisions",
+        "products",
+        "settings"
+      ],
+      "kids": [
+        {
+          "t": "use",
+          "c": "macFold",
+          "p": {
+            "title": "Running now (3)",
+            "open": true,
+            "kids": [
+              {
+                "t": "h",
+                "w": "fill",
+                "gap": 12,
+                "pad": [
+                  8,
+                  0
+                ],
+                "align": "center",
+                "kids": [
+                  {
+                    "t": "v",
+                    "w": "fill",
+                    "gap": 2,
+                    "kids": [
+                      {
+                        "t": "text",
+                        "v": "Atlas · Claude Code · 4 min",
+                        "s": "mac-caption",
+                        "c": "text-secondary"
+                      },
+                      {
+                        "t": "text",
+                        "v": "Fix the failing checkout test",
+                        "s": "mac-body",
+                        "c": "text"
+                      }
+                    ]
+                  },
+                  {
+                    "t": "use",
+                    "c": "macField",
+                    "p": {
+                      "placeholder": "Correct it",
+                      "w": 220
+                    }
+                  }
+                ]
+              },
+              {
+                "t": "h",
+                "w": "fill",
+                "gap": 12,
+                "pad": [
+                  8,
+                  0
+                ],
+                "align": "center",
+                "kids": [
+                  {
+                    "t": "v",
+                    "w": "fill",
+                    "gap": 2,
+                    "kids": [
+                      {
+                        "t": "text",
+                        "v": "Pebble · Codex · 9 min",
+                        "s": "mac-caption",
+                        "c": "text-secondary"
+                      },
+                      {
+                        "t": "text",
+                        "v": "Review the sync change",
+                        "s": "mac-body",
+                        "c": "text"
+                      }
+                    ]
+                  },
+                  {
+                    "t": "use",
+                    "c": "macField",
+                    "p": {
+                      "placeholder": "Correct it",
+                      "w": 220
+                    }
+                  }
+                ]
+              },
+              {
+                "t": "h",
+                "w": "fill",
+                "gap": 12,
+                "pad": [
+                  8,
+                  0
+                ],
+                "align": "center",
+                "kids": [
+                  {
+                    "t": "v",
+                    "w": "fill",
+                    "gap": 2,
+                    "kids": [
+                      {
+                        "t": "text",
+                        "v": "Quill · Claude Code · 2 min",
+                        "s": "mac-caption",
+                        "c": "text-secondary"
+                      },
+                      {
+                        "t": "text",
+                        "v": "Draft Friday's post",
+                        "s": "mac-body",
+                        "c": "text"
+                      }
+                    ]
+                  },
+                  {
+                    "t": "use",
+                    "c": "macField",
+                    "p": {
+                      "placeholder": "Correct it",
+                      "w": 220
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

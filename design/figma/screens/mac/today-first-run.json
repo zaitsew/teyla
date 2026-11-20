@@ -1,0 +1,354 @@
+{
+  "id": "mac.today-first-run",
+  "title": "Today, first run",
+  "area": "mac",
+  "presentation": "tab",
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/UI/TodayView.swift:494"
+  ],
+  "capture": "docs/img/mac/today-first-run-light.png",
+  "root": {
+    "t": "use",
+    "c": "macWindow",
+    "p": {
+      "selected": "today",
+      "badges": {
+        "today": 4,
+        "decisions": 4,
+        "operations": 1
+      },
+      "linked": [
+        "today",
+        "home",
+        "decisions",
+        "products",
+        "settings"
+      ],
+      "kids": [
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 6,
+          "kids": [
+            {
+              "t": "text",
+              "v": "What should this work lead to?",
+              "s": "mac-page-title",
+              "c": "text"
+            },
+            {
+              "t": "text",
+              "v": "Name one outcome and one weekly number. Today will then show how close you are and what moves it.",
+              "s": "mac-body",
+              "c": "text-secondary",
+              "w": "fill"
+            }
+          ]
+        },
+        {
+          "t": "h",
+          "gap": 24,
+          "kids": [
+            {
+              "t": "h",
+              "gap": 8,
+              "align": "center",
+              "kids": [
+                {
+                  "t": "v",
+                  "w": 28,
+                  "h": 28,
+                  "r": 14,
+                  "fill": "primary",
+                  "align": "center",
+                  "justify": "center",
+                  "kids": [
+                    {
+                      "t": "text",
+                      "v": "1",
+                      "s": "mac-body",
+                      "c": "on-primary",
+                      "weight": 600
+                    }
+                  ]
+                },
+                {
+                  "t": "text",
+                  "v": "Outcome",
+                  "s": "mac-body",
+                  "c": "text",
+                  "weight": 600
+                }
+              ]
+            },
+            {
+              "t": "h",
+              "gap": 8,
+              "align": "center",
+              "kids": [
+                {
+                  "t": "v",
+                  "w": 28,
+                  "h": 28,
+                  "r": 14,
+                  "fill": "track",
+                  "align": "center",
+                  "justify": "center",
+                  "kids": [
+                    {
+                      "t": "text",
+                      "v": "2",
+                      "s": "mac-body",
+                      "c": "text-secondary",
+                      "weight": 600
+                    }
+                  ]
+                },
+                {
+                  "t": "text",
+                  "v": "Weekly number",
+                  "s": "mac-body",
+                  "c": "text-secondary",
+                  "weight": 400
+                }
+              ]
+            },
+            {
+              "t": "h",
+              "gap": 8,
+              "align": "center",
+              "kids": [
+                {
+                  "t": "v",
+                  "w": 28,
+                  "h": 28,
+                  "r": 14,
+                  "fill": "track",
+                  "align": "center",
+                  "justify": "center",
+                  "kids": [
+                    {
+                      "t": "text",
+                      "v": "3",
+                      "s": "mac-body",
+                      "c": "text-secondary",
+                      "weight": 600
+                    }
+                  ]
+                },
+                {
+                  "t": "text",
+                  "v": "Sources",
+                  "s": "mac-body",
+                  "c": "text-secondary",
+                  "weight": 400
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "t": "h",
+          "w": "fill",
+          "gap": 24,
+          "align": "start",
+          "kids": [
+            {
+              "t": "v",
+              "w": "fill",
+              "kids": [
+                {
+                  "t": "v",
+                  "w": "fill",
+                  "gap": 16,
+                  "pad": 22,
+                  "r": "card",
+                  "fill": "surface",
+                  "stroke": "border",
+                  "kids": [
+                    {
+                      "t": "text",
+                      "v": "The outcome, in your words",
+                      "s": "mac-card-title",
+                      "c": "text"
+                    },
+                    {
+                      "t": "use",
+                      "c": "macField",
+                      "p": {
+                        "text": "Paying teams for Atlas"
+                      }
+                    },
+                    {
+                      "t": "h",
+                      "gap": 8,
+                      "align": "center",
+                      "wrap": true,
+                      "kids": [
+                        {
+                          "t": "text",
+                          "v": "Or start from",
+                          "s": "mac-caption",
+                          "c": "text-secondary"
+                        },
+                        {
+                          "t": "h",
+                          "pad": [
+                            4,
+                            12
+                          ],
+                          "r": "chip",
+                          "fill": "surface",
+                          "stroke": "border",
+                          "kids": [
+                            {
+                              "t": "text",
+                              "v": "Conversations",
+                              "s": "mac-body",
+                              "c": "text"
+                            }
+                          ]
+                        },
+                        {
+                          "t": "h",
+                          "pad": [
+                            4,
+                            12
+                          ],
+                          "r": "chip",
+                          "fill": "surface",
+                          "stroke": "border",
+                          "kids": [
+                            {
+                              "t": "text",
+                              "v": "Testers",
+                              "s": "mac-body",
+                              "c": "text"
+                            }
+                          ]
+                        },
+                        {
+                          "t": "h",
+                          "pad": [
+                            4,
+                            12
+                          ],
+                          "r": "chip",
+                          "fill": "surface",
+                          "stroke": "border",
+                          "kids": [
+                            {
+                              "t": "text",
+                              "v": "Customers",
+                              "s": "mac-body",
+                              "c": "text"
+                            }
+                          ]
+                        },
+                        {
+                          "t": "h",
+                          "pad": [
+                            4,
+                            12
+                          ],
+                          "r": "chip",
+                          "fill": "surface",
+                          "stroke": "border",
+                          "kids": [
+                            {
+                              "t": "text",
+                              "v": "Investors",
+                              "s": "mac-body",
+                              "c": "text"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "t": "text",
+                      "v": "Done when (optional)",
+                      "s": "mac-caption",
+                      "c": "text-secondary"
+                    },
+                    {
+                      "t": "use",
+                      "c": "macField",
+                      "p": {
+                        "placeholder": "Ten teams on the paid plan"
+                      }
+                    },
+                    {
+                      "t": "h",
+                      "w": "fill",
+                      "align": "center",
+                      "kids": [
+                        {
+                          "t": "text",
+                          "v": "Step 2 asks for one weekly count. Step 3 can wait: you can log by hand.",
+                          "s": "mac-caption",
+                          "c": "text-secondary",
+                          "w": "fill"
+                        },
+                        {
+                          "t": "use",
+                          "c": "macBtn",
+                          "p": {
+                            "text": "Continue",
+                            "kind": "prominent"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "t": "v",
+              "w": 300,
+              "gap": 12,
+              "pad": 20,
+              "r": "card",
+              "fill": "surface",
+              "stroke": "border",
+              "kids": [
+                {
+                  "t": "text",
+                  "v": "Preview on Today",
+                  "s": "mac-caption",
+                  "c": "text-secondary"
+                },
+                {
+                  "t": "text",
+                  "v": "Paying teams for Atlas",
+                  "s": "mac-section",
+                  "c": "text",
+                  "w": "fill"
+                },
+                {
+                  "t": "text",
+                  "v": "No weekly number is set for this goal.",
+                  "s": "mac-body",
+                  "c": "text-secondary",
+                  "w": "fill"
+                },
+                {
+                  "t": "text",
+                  "v": "Each circle is one real event that came back: a conversation, an intro, a sign-up. Drafts and sends never fill one.",
+                  "s": "mac-caption",
+                  "c": "text-secondary",
+                  "w": "fill"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
