@@ -133,3 +133,9 @@ def test_queue_lengths_show_only_live_tickets():
     _ticket("lane", 4010, NOW - 20)
     assert load.queue_lengths(NOW, _alive({OLDEST})) == {"build": 1, "lane": 1}
     assert load.queue_lengths(NOW + 5000, _alive()) == {}          # past every deadline
+
+
+def test_a_waiter_whose_own_ticket_expired_never_goes_ahead_of_an_older_live_waiter():
+    _ticket("build", OLDER, NOW - 30)
+    mine = _ticket("build", ME, NOW - 10, deadline=NOW - 1)        # swept on the next read: deadline passed
+    assert load.queue_position("build", mine, now=NOW, alive=_alive()) == 1

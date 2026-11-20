@@ -1272,14 +1272,16 @@ def live_tickets(kind: str, now: float | None = None, alive: Callable[[int], boo
 
 def queue_position(kind: str, ticket: pathlib.Path | None, now: float | None = None,
                    alive: Callable[[int], bool] | None = None, base: pathlib.Path | None = None) -> int:
-    """How many live tickets are ahead; 0 = next in line (also with no ticket: a waiter that could not join,
-    or whose ticket was swept, is never held back)."""
+    """How many live tickets are ahead; 0 = next in line (also with no ticket: a waiter that could not join is
+    never held back). A ticket that was swept because its own deadline passed is behind everyone: that waiter
+    must time out, never take a free slot ahead of an older live waiter."""
     if ticket is None:
         return 0
-    for i, (p, _rec) in enumerate(live_tickets(kind, now, alive, base)):
+    live = live_tickets(kind, now, alive, base)
+    for i, (p, _rec) in enumerate(live):
         if p == ticket:
             return i
-    return 0
+    return len(live)
 
 
 def _ordinal(n: int) -> str:
