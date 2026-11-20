@@ -36,7 +36,7 @@ def summary_text(diag: dict, offers: list, for_agent: bool = False) -> str:
     closing line that tells a person at a terminal how to go on: an agent asks one offer per question
     (AGENTS.md), and that line would tell it to apply several at once."""
     if diag["empty"]:
-        return diagnose.EMPTY_MESSAGE
+        return diagnose.EMPTY_MESSAGE + "\n" + features_mod.history_free_text()
     L = []
     harnesses = ", ".join(f"{h} {_money(v)}" for h, v in list(diag["by_harness"].items())[:3] if v >= 1)
     L.append(f"Last {plural(diag['days'], 'day')}: {_money(diag['total_usd'])} at API list price over {plural(diag['sessions'], 'session')} "

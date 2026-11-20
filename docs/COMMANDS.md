@@ -197,7 +197,7 @@ Every `teyla` command with its flags; `teyla help --all` prints the same list in
 
 | command | what you get |
 |---|---|
-| `teyla doctor [--json] [--refresh] [--no-repos]` | everything that must be true on this machine, each FIX/WARN with its fix |
+| `teyla doctor [--json] [--refresh] [--no-repos]` | everything that must be true on this machine, each FIX/WARN with its fix. A feature you have not turned on is INFO `off (pack X — teyla start to turn on)`, never FIX: FIX counts only what is set up and broken, so a fresh install exits 0. Without a `config.toml` it says `ops_root: not used until you set it`. A Codex app with no CLI is one INFO line and nothing in the app is run |
 | `teyla update [--check] [--force] [--wire]` | install a newer published release by its commit sha, then re-wire the policy, plugin and routines; `--check` only reports. A corrupt uv cache is cleaned once; when `uv cache clean` cannot get the cache lock within 60 s, the retry (and any restore) runs with `--no-cache` |
 | `teyla plugin install <src>\|uninstall <name>\|refresh [--force]` | install the Claude Code plugin by editing its registry (no `claude` CLI needed); `refresh` brings the loaded copy to this version |
 | `teyla plugins [name\|path] [--json]` | the installed Claude Code plugins: version loaded vs working copy, and a skill / rule / fact quality pass over each |

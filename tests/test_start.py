@@ -398,8 +398,13 @@ def test_start_without_a_terminal_never_prompts(machine, capsys, monkeypatch):
 def test_start_on_an_empty_machine_says_what_to_do(fake_home, capsys):
     code, out, _ = _run(["start"], capsys)
     assert code == 0
-    assert out.strip() == ("No agent sessions found yet in ~/.claude or ~/.codex. "
-                           "Use Claude Code or Codex for a day, then run `teyla start` again.")
+    assert out.startswith("No agent sessions found yet in ~/.claude or ~/.codex. "
+                          "Use Claude Code or Codex for a day, then run `teyla start` again.")
+    # INS-1: the packs that need no history are named, with the way to turn one on.
+    assert "work today" in out and "Machine guard (load)" in out and "Disk cleanup (disk)" in out
+    assert "One policy (policy)" in out and "Security (security)" in out and "Writing (writing)" in out
+    assert "Token cost (cost)" not in out
+    assert "`teyla features`" in out and "`teyla features on <pack>`" in out
     d = json.loads(_run(["start", "--agent"], capsys)[1])
     assert d["diagnosis"]["empty"] is True and d["summary_text"] == out.strip()
 

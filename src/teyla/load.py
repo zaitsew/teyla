@@ -600,6 +600,22 @@ def classify(rows: list[Row]) -> Procs:
 # --- the snapshot --------------------------------------------------------------------------------
 
 Runner = Callable[..., "tuple[int, str]"]
+
+# Where macOS keeps the system tools the snapshot calls. A minimal PATH (cron, a hook, a clean shell) lacks
+# /usr/sbin, where `sysctl` lives, and RAM then reads as unknown.
+SYSTEM_DIRS = ("/usr/sbin", "/usr/bin", "/bin", "/sbin")
+
+
+def run_system(cmd: list[str], timeout: int = 60) -> tuple[int, str]:
+    """`run_command`, with a bare tool name (`ps`, `sysctl`, `vm_stat`) resolved to its absolute system path
+    when that file exists, so the answer does not depend on PATH."""
+    if cmd and "/" not in cmd[0]:
+        for d in SYSTEM_DIRS:
+            full = os.path.join(d, cmd[0])
+            if os.access(full, os.X_OK):
+                cmd = [full, *cmd[1:]]
+                break
+    return run_command(cmd, timeout)
 Footprints = Callable[[list], "dict[int, int]"]     # pids -> physical footprint bytes, for the pids it could read
 
 RUSAGE_INFO_V2 = 2
@@ -680,7 +696,7 @@ def disk_free() -> int | None:
         return None
 
 
-def snapshot(run: Runner = run_command, now: dt.datetime | None = None, vm: bool = True,
+def snapshot(run: Runner = run_system, now: dt.datetime | None = None, vm: bool = True,
              footprints: Footprints | None = None) -> Snapshot | None:
     """One `sysctl`, one `ps`, (`vm`) one `vm_stat`, and the physical footprint of every process (`footprints`,
     default `native_footprints`; RSS where it cannot be read). None when `ps` could not answer (the processes
@@ -706,7 +722,7 @@ def snapshot(run: Runner = run_command, now: dt.datetime | None = None, vm: bool
                     swapout_bytes=swapouts, pageout_bytes=pageouts, procs=classify(rows))
 
 
-def safe_snapshot(run: Runner = run_command, footprints: Footprints | None = None) -> Snapshot | None:
+def safe_snapshot(run: Runner = run_system, footprints: Footprints | None = None) -> Snapshot | None:
     """`snapshot`, with any failure of the guard's own code read as "unknown"."""
     try:
         return snapshot(run, footprints=footprints)
@@ -1692,7 +1708,7 @@ def render(snap: Snapshot, verdict: Verdict, trend: Trend | None = None, conf: d
            bypassed: list | None = None) -> str:
     p = snap.procs
     lines = [verdict.line()]
-    mem = [f"{gb(snap.ram_bytes)} RAM"]
+    mem = [f"{gb(snap.ram_bytes)} RAM" if snap.ram_bytes else "RAM unknown (sysctl hw.memsize gave no answer)"]
     if snap.swap_used_bytes is not None:
         pct = _pct(snap.swap_used_bytes, snap.ram_bytes)
         mem.append(f"swap {gb(snap.swap_used_bytes)}" + (f" of {gb(snap.swap_total_bytes)}" if snap.swap_total_bytes else "")
@@ -1754,7 +1770,7 @@ def volume_refusal(kind: str, cfg: dict | None = None) -> str:
     return msg
 
 
-def cmd_load(args, run: Runner = run_command) -> int:
+def cmd_load(args, run: Runner = run_system) -> int:
     conf = guard_conf()
     if args.replay:
         if args.day:
