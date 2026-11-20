@@ -756,7 +756,7 @@ def _worsening(trend: "Trend | None", snap: Snapshot, conf: dict | None) -> list
     free = snap.disk_free_bytes
     if (trend.disk_free_ahead_gb is not None and free is not None and free >= crit_gb * GIB
             and trend.disk_free_ahead_gb < crit_gb and trend.disk_recent_gb is not None and trend.disk_recent_gb > RECENT_GROWTH_GB):
-        out.append(f"disk {gb(free)} free and falling: on this trend {_disk_ahead(trend.disk_free_ahead_gb)} in {trend.disk_ahead_min:g} min,"
+        out.append(f"disk {gb(free)} free and falling: on this trend {_disk_ahead(trend.disk_free_ahead_gb)} in {trend.disk_ahead_min:g} min at the current rate,"
                    f" under the {crit_gb:g} GB critical line")
     return out
 
@@ -1688,7 +1688,7 @@ def trend_lines(trend: Trend | None, conf: dict | None = None) -> list[str]:
     if trend.swap_gb_30m is not None:
         bits.append(f"swap {trend.swap_gb_30m:+.1f} GB per 30 min")
     if trend.disk_free_ahead_gb is not None:
-        bits.append(f"disk {_disk_ahead(trend.disk_free_ahead_gb)} in {trend.disk_ahead_min:g} min")
+        bits.append(f"disk forecast: {_disk_ahead(trend.disk_free_ahead_gb)} in {trend.disk_ahead_min:g} min at the current rate")
     if trend.swapout_mb_s is not None:
         bits.append(f"swap-out {trend.swapout_mb_s:.1f} MB/s")
     out = []
@@ -1710,15 +1710,14 @@ def render(snap: Snapshot, verdict: Verdict, trend: Trend | None = None, conf: d
     mem = [f"{gb(snap.ram_bytes)} RAM"]
     if snap.swap_used_bytes is not None:
         pct = _pct(snap.swap_used_bytes, snap.ram_bytes)
-        mem.append(f"swap {gb(snap.swap_used_bytes)}" + (f" of {gb(snap.swap_total_bytes)}" if snap.swap_total_bytes else "")
-                   + (f" ({pct:.0f}% of RAM)" if pct is not None else ""))
+        mem.append(f"swap {gb(snap.swap_used_bytes)}" + (f" ({pct:.0f}% of RAM)" if pct is not None else ""))
     if snap.compressor_bytes is not None:
         mem.append(f"compressor {gb(snap.compressor_bytes)}")
     if snap.pressure is not None:
         mem.append("pressure " + {1: "normal", 2: "warn", 4: "critical"}.get(snap.pressure, str(snap.pressure)))
     lines.append("memory: " + " · ".join(mem))
     if snap.disk_free_bytes is not None:
-        lines.append(f"disk: {gb(snap.disk_free_bytes)} free")
+        lines.append(f"disk: {gb(snap.disk_free_bytes)} free now")
     lines += trend_lines(trend, conf)
     if snap.load1 is not None:
         lines.append(f"cpu: load {snap.load1:.1f} / {snap.load5:.1f} / {snap.load15:.1f} on {snap.ncpu or '?'} cores")
