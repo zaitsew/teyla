@@ -1,0 +1,26 @@
+{
+  "name": "Teyla",
+  "tagline": "The control room for AI agents on one Mac.",
+  "summary": "See what your agent sessions cost, what waits on you, and where each product stands.",
+  "accent": "#3A4AA8",
+  "accent_dark": "#9AA7F2",
+  "status": "live",
+  "kind": "cli",
+  "platforms": ["macOS", "iOS"],
+  "pills": ["Open source"],
+  "highlights": [
+    {"label": "COST", "title": "30 days of agent spend, priced", "text": "Finds the waste and offers undoable fixes, each with its saving."},
+    {"label": "PACKS", "title": "Ten packs, you tick what you want", "text": "Cost, load, disk, inbox, policy, security, design, ship, writing."},
+    {"label": "INBOX", "title": "Every open question on one screen", "text": "Answer by text or voice, from the Mac, Telegram or iPhone."},
+    {"label": "POLICY", "title": "One policy for every agent", "text": "Claude Code, Codex, Grok, Cursor and Hermes read the same file."},
+    {"label": "PRODUCTS", "title": "One line per product", "text": "Health, builds that reached a tester, and what each one is missing."},
+    {"label": "LOCAL", "title": "Nothing leaves your Mac", "text": "No server, no account. Each outside call is off or listed."}
+  ],
+  "steps": [
+    {"title": "Paste one line", "text": "Your agent installs Teyla."},
+    {"title": "See the diagnosis", "text": "30 days of cost and waste."},
+    {"title": "Tick your packs", "text": "Only ticked packs turn on."},
+    {"title": "Answer what waits", "text": "Questions, notes, next step."},
+    {"title": "Undo any change", "text": "Every change has a way back."}
+  ]
+}
