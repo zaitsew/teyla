@@ -217,6 +217,15 @@ def _checklist(pl: dict) -> list | None:
 
 
 def cmd_start(args) -> int:
+    from teyla.adapters import cache
+    cache.set_read_only()                   # start changes nothing until the person accepts
+    try:
+        return _cmd_start(args)
+    finally:
+        cache.set_read_only(False)
+
+
+def _cmd_start(args) -> int:
     if not (args.agent or args.json):       # stdout stays the card; the wait is announced on stderr
         n = diagnose.count_sessions(args.days)
         print(f"Reading {plural(n, 'session') if n is not None else 'your sessions'} from the last {plural(args.days, 'day')}…", file=sys.stderr)

@@ -36,6 +36,16 @@ def enabled() -> bool:
     return not os.environ.get("TEYLA_NO_CACHE")
 
 
+# A command that promises to change nothing (`teyla start` before the person accepts) reads the
+# cache but never writes or prunes it.
+_read_only = False
+
+
+def set_read_only(on: bool = True) -> None:
+    global _read_only
+    _read_only = on
+
+
 def cache_dir() -> pathlib.Path:
     """Resolved at call time, so a test's TEYLA_HOME is obeyed."""
     home = os.environ.get("TEYLA_HOME") or (pathlib.Path.home() / ".teyla")
@@ -95,7 +105,7 @@ def get(key):
 
 
 def put(key, session) -> None:
-    if key is None or not enabled() or session is None:
+    if key is None or not enabled() or _read_only or session is None:
         return
     p = _entry_path(key)
     tmp = p.with_name(f".{p.name}.{os.getpid()}.tmp")
@@ -152,7 +162,7 @@ def _note_miss() -> None:
 def prune(now: float | None = None) -> int:
     """After a full load: delete entries this run did not use and nobody has used for 30 days
     (their transcript is gone, or no longer read). Returns the number removed."""
-    if not enabled():
+    if not enabled() or _read_only:
         return 0
     now = time.time() if now is None else now
     n = 0

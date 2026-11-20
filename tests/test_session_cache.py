@@ -240,3 +240,17 @@ def test_format_or_foreign_key_is_a_miss(tree, monkeypatch):
     calls = _parse_calls(monkeypatch)
     claude_code.load(root=str(root))
     assert calls == [str(f)]
+
+
+def test_read_only_mode_stores_and_prunes_nothing(tmp_path, monkeypatch):
+    """`teyla start` promises to change nothing: in read-only mode the cache is never written."""
+    from teyla.adapters import cache
+    monkeypatch.setenv("TEYLA_HOME", str(tmp_path))
+    monkeypatch.delenv("TEYLA_NO_CACHE", raising=False)
+    cache.set_read_only(True)
+    try:
+        cache.put(("k",), object())
+        assert cache.prune() == 0
+    finally:
+        cache.set_read_only(False)
+    assert not (tmp_path / "cache").exists()
