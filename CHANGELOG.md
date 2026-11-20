@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **`teyla testflight` with no path checks products in parallel.** The sweep asked your release tool about each product one after the other, about 9 s each, so 15 products took over 2 minutes and a 90 s caller timed out with no output. It now checks 4 products at once (`[apple] testflight_workers` in `~/.teyla/platform.toml`, clamped to 1..8), about 4x faster; the `--china` check uses the same pool. Rows keep manifest order and shape, and a product whose check fails becomes an error row without stopping the others. On a terminal, a sweep of several products prints one progress line to stderr (never with `--json` or `--quiet`). `--help` now says what `paths` and `--json` mean.
+
 - **`teyla storage offload --recover` no longer keeps a resolved entry.** An offload that stopped with both the original and the drive copy incomplete stayed in the journal after you repaired it, and blocked every later offload. A repeat `--recover` now decides again and clears it.
 
 - `teyla storage offload --to <mount point>`: move the heavy folders (DerivedData, the Android SDK, the Gradle caches, and with `--with-app-data` the simulators and virtual devices) to an external drive. Dry run by default. Each folder is copied, checked against a manifest digest, switched to a symlink, smoke-tested, and only then is the original deleted; any failure restores it. `--undo PATH`, `--keep` with `--finalize`, and `--recover` after a crash. `teyla doctor` names an unfinished offload.

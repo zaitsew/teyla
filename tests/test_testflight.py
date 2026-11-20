@@ -780,3 +780,87 @@ def test_git_that_cannot_answer_is_silent(tmp_path, monkeypatch, capsys):
     lag_tool(monkeypatch, payload(mac()))
     rc, cap = go(capsys)
     assert rc == 0 and "WARN" not in cap.out
+
+
+# --- the sweep checks products concurrently ------------------------------------------------------
+
+def _sleepy_tool(monkeypatch, delay, *, fail_for=None):
+    import time
+
+    def run_tool(tool, bundle_id, tester):
+        time.sleep(delay)
+        if fail_for and bundle_id == fail_for:
+            raise RuntimeError("boom")
+        return payload(plat("IOS"))
+    monkeypatch.setattr(testflight, "run_tool", run_tool)
+
+
+def _many(tmp_path, n):
+    for i in range(n):
+        product(tmp_path, f"app-{i:02d}", bundle=f"com.example.app{i:02d}")
+
+
+def test_workers_setting_is_clamped():
+    assert testflight._workers({}) == 4
+    assert testflight._workers({"apple": {"testflight_workers": 0}}) == 1
+    assert testflight._workers({"apple": {"testflight_workers": 99}}) == 8
+    assert testflight._workers({"apple": {"testflight_workers": 3}}) == 3
+    assert testflight._workers({"apple": {"testflight_workers": "many"}}) == 4
+
+
+def test_sweep_runs_products_in_parallel_and_keeps_order(tmp_path, monkeypatch):
+    import time
+    platform_toml(tmp_path)
+    _many(tmp_path, 8)
+    _sleepy_tool(monkeypatch, 0.2)
+    t0 = time.monotonic()
+    rows = testflight.run()
+    took = time.monotonic() - t0
+    assert [r["product"] for r in rows] == [f"app-{i:02d}" for i in range(8)]
+    assert took < 1.0, took            # serial would take 1.6 s; 4 workers about 0.4 s
+
+
+def test_one_failing_product_is_an_error_row_and_the_rest_are_normal(tmp_path, monkeypatch):
+    platform_toml(tmp_path)
+    _many(tmp_path, 5)
+    _sleepy_tool(monkeypatch, 0.01, fail_for="com.example.app02")
+    monkeypatch.setattr(testflight, "check_product", _raising_check(testflight.check_product))
+    rows = testflight.run()
+    assert [r["product"] for r in rows] == [f"app-{i:02d}" for i in range(5)]
+    assert [r["verdict"] for r in rows if r["product"] != "app-02"] == ["current"] * 4
+    assert rows[2]["verdict"] == "error" and "boom" in rows[2]["error"]
+
+
+def _raising_check(real):
+    def check(manifest, cfg):
+        if manifest["product"] == "app-02":
+            raise RuntimeError("boom")
+        return real(manifest, cfg)
+    return check
+
+
+def test_china_sweep_is_parallel_too(tmp_path, monkeypatch):
+    import time
+    platform_toml(tmp_path)
+    _many(tmp_path, 8)
+
+    def slow(manifest, cfg):
+        time.sleep(0.2)
+        return None if manifest["product"] != "app-03" else testflight._row(manifest, "china", line="x")
+    monkeypatch.setattr(testflight, "check_china", slow)
+    t0 = time.monotonic()
+    rows = testflight.run_china()
+    assert time.monotonic() - t0 < 1.0
+    assert [r["product"] for r in rows] == ["app-03"]
+
+
+def test_progress_note_only_on_a_tty_for_several_products(monkeypatch, capsys):
+    monkeypatch.setattr(testflight.sys.stderr, "isatty", lambda: True, raising=False)
+    testflight._progress(15)
+    testflight._progress(1)
+    testflight._progress(15, quiet=True)
+    err = capsys.readouterr().err
+    assert err.count("checking 15 products") == 1
+    monkeypatch.setattr(testflight.sys.stderr, "isatty", lambda: False, raising=False)
+    testflight._progress(15)
+    assert capsys.readouterr().err == ""

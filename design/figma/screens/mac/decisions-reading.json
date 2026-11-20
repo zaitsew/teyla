@@ -1,0 +1,64 @@
+{
+  "id": "mac.decisions-reading",
+  "title": "Decisions, reading",
+  "area": "mac",
+  "presentation": "tab",
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/UI/HomeView.swift:197"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macWindow",
+    "p": {
+      "selected": "decisions",
+      "badges": {},
+      "linked": [
+        "today",
+        "home",
+        "decisions",
+        "products",
+        "settings"
+      ],
+      "live": "updating",
+      "kids": [
+        {
+          "t": "v",
+          "w": 720,
+          "gap": 24,
+          "kids": [
+            {
+              "t": "use",
+              "c": "macPageHeader",
+              "p": {
+                "title": "Decisions"
+              }
+            },
+            {
+              "t": "h",
+              "gap": 8,
+              "align": "center",
+              "kids": [
+                {
+                  "t": "icon",
+                  "n": "progress.indicator",
+                  "size": 12,
+                  "c": "text-secondary"
+                },
+                {
+                  "t": "text",
+                  "v": "Reading your sessions…",
+                  "s": "mac-body",
+                  "c": "text-secondary"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
