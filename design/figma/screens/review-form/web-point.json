@@ -1,0 +1,34 @@
+{
+  "id": "review-form.web-point",
+  "title": "Review form, Web: Pick a spot",
+  "area": "review-form",
+  "presentation": "push",
+  "device": {
+    "w": 1440,
+    "h": 900
+  },
+  "source": [
+    "packages/review-web/src/ui.ts:22",
+    "packages/review-web/src/strings.ts:44"
+  ],
+  "root": {
+    "t": "use",
+    "c": "browser",
+    "p": {
+      "url": "atlas.example/projects",
+      "kids": [
+        {
+          "t": "use",
+          "c": "reviewWeb",
+          "p": {
+            "step": "point",
+            "mark": "none",
+            "links": {
+              "next": "review-form.web-comment"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "id": "iphone.home-folds",
+  "title": "Home · folds open",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/HomeProducts.swift:200"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {
+        "decisions": 6
+      },
+      "tab": "home",
+      "title": "Home",
+      "large": false,
+      "trailing": "New task",
+      "kids": [
+        {
+          "t": "v",
+          "name": "Being built",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "iosHeader",
+              "p": {
+                "title": "Being built",
+                "note": "5 or more commits this week, no users counted yet. Most commits first",
+                "count": 9
+              }
+            },
+            {
+              "t": "use",
+              "c": "iosPanel",
+              "p": {
+                "kids": [
+                  {
+                    "t": "use",
+                    "c": "iosBuiltRow",
+                    "p": {
+                      "name": "Quill",
+                      "summary": "Reading lists with a share sheet.",
+                      "count": "21",
+                      "link": "iphone.product"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosBuiltRow",
+                    "p": {
+                      "name": "Fern",
+                      "summary": "A plant journal that nags kindly.",
+                      "count": "14",
+                      "link": "iphone.product"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosBuiltRow",
+                    "p": {
+                      "name": "Orbit",
+                      "summary": "Weekly planning for two.",
+                      "count": "9",
+                      "link": "iphone.product"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosBuiltRow",
+                    "p": {
+                      "name": "Pylon",
+                      "summary": "Status page for small teams.",
+                      "count": "8",
+                      "link": "iphone.product"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosBuiltRow",
+                    "p": {
+                      "name": "Mote",
+                      "summary": "Photo inbox cleaner.",
+                      "count": "7",
+                      "link": "iphone.product"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosBuiltRow",
+                    "p": {
+                      "name": "Lumen",
+                      "summary": "Dimmer for the home screen.",
+                      "count": "6",
+                      "link": "iphone.product"
+                    }
+                  }
+                ],
+                "fold": "Show fewer",
+                "link": "iphone.home-folds"
+              }
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "name": "Running now",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "iosFold",
+              "p": {
+                "title": "Running now (3)",
+                "open": true,
+                "kids": [
+                  {
+                    "t": "use",
+                    "c": "iosRunningCard",
+                    "p": {
+                      "title": "Quill · reading-list import",
+                      "detail": "codex · 12 min · 41 tests green",
+                      "correct": true
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosRunningCard",
+                    "p": {
+                      "title": "Atlas · trial email rewrite",
+                      "detail": "claude · 31 min"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosRunningCard",
+                    "p": {
+                      "title": "Pebble · store screenshots",
+                      "detail": "claude · 4 min"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

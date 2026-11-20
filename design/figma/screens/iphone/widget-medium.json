@@ -1,0 +1,20 @@
+{
+  "id": "iphone.widget-medium",
+  "title": "Widget · medium",
+  "area": "iphone",
+  "presentation": "overlay",
+  "device": {
+    "w": 364,
+    "h": 170
+  },
+  "source": [
+    "apps/ios/TeylaWidget/ActivityWidget.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosWidget",
+    "p": {
+      "family": "medium"
+    }
+  }
+}

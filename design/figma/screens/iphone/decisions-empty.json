@@ -1,0 +1,42 @@
+{
+  "id": "iphone.decisions-empty",
+  "title": "Decisions · nothing waits",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/DecisionsView.swift:41"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {},
+      "title": "Decisions",
+      "tab": "decisions",
+      "kids": [
+        {
+          "t": "text",
+          "v": "Nothing waits on you.",
+          "s": "ios-body",
+          "c": "ios-label-2",
+          "w": "fill"
+        },
+        {
+          "t": "use",
+          "c": "iosFold",
+          "p": {
+            "title": "Done since yesterday · 6",
+            "open": false,
+            "kids": []
+          }
+        }
+      ]
+    }
+  }
+}

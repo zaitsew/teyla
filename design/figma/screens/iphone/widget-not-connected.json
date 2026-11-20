@@ -1,0 +1,20 @@
+{
+  "id": "iphone.widget-not-connected",
+  "title": "Widget · not connected",
+  "area": "iphone",
+  "presentation": "overlay",
+  "device": {
+    "w": 170,
+    "h": 170
+  },
+  "source": [
+    "apps/ios/TeylaWidget/ActivityWidget.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosWidget",
+    "p": {
+      "family": "not-connected"
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "id": "iphone.widget-inline",
+  "title": "Widget · inline",
+  "area": "iphone",
+  "presentation": "overlay",
+  "device": {
+    "w": 240,
+    "h": 22
+  },
+  "source": [
+    "apps/ios/TeylaWidget/ActivityWidget.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosWidget",
+    "p": {
+      "family": "inline"
+    }
+  }
+}

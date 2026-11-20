@@ -1,0 +1,215 @@
+{
+  "id": "mac.home-scrolled",
+  "title": "Home, scrolled",
+  "area": "mac",
+  "presentation": "tab",
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/UI/HomeView.swift:254",
+    "apps/mac/Teyla/UI/HomeProducts.swift:121,170"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macWindow",
+    "p": {
+      "selected": "home",
+      "badges": {
+        "today": 4,
+        "decisions": 4,
+        "operations": 1
+      },
+      "linked": [
+        "today",
+        "home",
+        "decisions",
+        "products",
+        "settings"
+      ],
+      "kids": [
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "macSection",
+              "p": {
+                "title": "Decisions",
+                "note": "Only you can answer these"
+              }
+            },
+            {
+              "t": "use",
+              "c": "macAsk",
+              "p": {
+                "product": "Atlas",
+                "age": "3 h",
+                "unblocks": "the paid plan launch",
+                "question": "Renew the Atlas domain for another year?",
+                "context": "The domain expires on 2 December. Renewing for one year costs $14.",
+                "proposal": "Renew for one year, from the card on file.",
+                "why": "A lapse would take the Atlas site offline the week of the launch.",
+                "options": [],
+                "canUseProposal": false,
+                "wide": true
+              }
+            },
+            {
+              "t": "use",
+              "c": "macAsk",
+              "p": {
+                "product": "Pebble",
+                "age": "1 day",
+                "unblocks": "build 14",
+                "question": "Ship Pebble 1.4 to testers today, or wait for the sync fix?",
+                "context": "The sync fix is merged but not reviewed. Testers on 1.3 still see duplicate entries.",
+                "proposal": "Wait one day for the review, then ship both together.",
+                "why": "The fix is small, and a second build costs the testers another update.",
+                "options": [
+                  "Ship today",
+                  "Wait a day"
+                ],
+                "wide": true
+              }
+            },
+            {
+              "t": "use",
+              "c": "macBtn",
+              "p": {
+                "text": "See all 4",
+                "kind": "link",
+                "link": "mac.decisions"
+              }
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "macSection",
+              "p": {
+                "title": "Being built",
+                "note": "5 or more commits this week, no users counted yet. Most commits first"
+              }
+            },
+            {
+              "t": "h",
+              "w": "fill",
+              "gap": 12,
+              "kids": [
+                {
+                  "t": "use",
+                  "c": "macBuilt",
+                  "p": {
+                    "name": "Fern",
+                    "letter": "F",
+                    "summary": "A garden planner for small balconies.",
+                    "commits": "19",
+                    "spark": [
+                      0.3,
+                      0.6,
+                      0.5,
+                      0.8,
+                      1
+                    ],
+                    "link": "mac.product"
+                  }
+                },
+                {
+                  "t": "v",
+                  "w": "fill",
+                  "kids": []
+                },
+                {
+                  "t": "v",
+                  "w": "fill",
+                  "kids": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "macSection",
+              "p": {
+                "title": "Quiet",
+                "note": "Under 5 commits this week and no new users"
+              }
+            },
+            {
+              "t": "use",
+              "c": "macQuiet",
+              "p": {
+                "rows": [
+                  {
+                    "name": "Orbit",
+                    "letter": "O",
+                    "summary": "A tiny launcher for night sessions.",
+                    "commits": "3 commits",
+                    "link": "mac.product"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "t": "h",
+          "w": "fill",
+          "gap": 8,
+          "pad": [
+            8,
+            0
+          ],
+          "align": "center",
+          "kids": [
+            {
+              "t": "icon",
+              "n": "checkmark.circle",
+              "size": 14,
+              "c": "text-secondary"
+            },
+            {
+              "t": "text",
+              "v": "Teyla closed 3 questions",
+              "s": "mac-body",
+              "c": "text"
+            },
+            {
+              "t": "spacer"
+            },
+            {
+              "t": "use",
+              "c": "macBtn",
+              "p": {
+                "text": "Review",
+                "kind": "link"
+              }
+            }
+          ]
+        },
+        {
+          "t": "use",
+          "c": "macFold",
+          "p": {
+            "title": "Running now (3)"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -211,6 +211,30 @@ class Session:
     def day(self) -> str:
         return (self.first or "")[:10]
 
+    # The usage maps are defaultdicts whose factories are lambdas, which pickle cannot store (the parsed
+    # session cache does): they go out as plain dicts and come back as defaultdicts.
+    _DEFAULTDICTS = {"usage": 1, "sub_usage": 1, "loop_usage": 1, "day_usage": 2, "sub_day_usage": 2}
+
+    def __getstate__(self) -> dict:
+        d = dict(self.__dict__)
+        for k, depth in self._DEFAULTDICTS.items():
+            d[k] = {a: (dict(b) if depth == 2 else b) for a, b in d[k].items()}
+        return d
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+        for k, depth in self._DEFAULTDICTS.items():
+            if depth == 1:
+                m = defaultdict(Counter)
+                m.update(state[k])
+            else:
+                m = defaultdict(lambda: defaultdict(Counter))
+                for a, b in state[k].items():
+                    inner = defaultdict(Counter)
+                    inner.update(b)
+                    m[a] = inner
+            self.__dict__[k] = m
+
     def to_dict(self) -> dict:
         d = dataclasses.asdict(self)
         d["usage"] = {m: dict(c) for m, c in self.usage.items()}
@@ -349,4 +373,7 @@ def load_all(roots: dict | None = None, since: float | None = None) -> list[Sess
             out.extend(mod.load(since=since, **(roots or {}).get(mod.NAME, {})))
         except FileNotFoundError:
             continue
+    if since is None:
+        from . import cache
+        cache.prune()
     return out
