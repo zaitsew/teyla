@@ -27,6 +27,8 @@ import sys
 import tempfile
 import time
 
+from . import fanout
+
 
 def _probe_env() -> dict[str, str]:
     """The environment of a probe. The app and launchd start Teyla with a bare PATH, where a probe finds neither
@@ -164,9 +166,15 @@ def table(paths: list[str] | None = None, cfg: dict | None = None, *, cache: boo
     repos, runnable = repos_to_probe(paths, cfg)
     committed = not paths and not config.safe_mode(cfg)
     lines = [f"{'repo':18} {'status':10} counters", "-" * 70]
-    results: dict[str, dict] = {}
-    for r in repos:
-        d = probe(r, committed=committed) if r in runnable else {"_status": "not allowed"}
+    results: dict[str, tuple[str, dict]] = {}
+
+    def one(r: pathlib.Path) -> dict:
+        try:
+            return probe(r, committed=committed) if r in runnable else {"_status": "not allowed"}
+        except (OSError, subprocess.SubprocessError) as e:     # one repo's failure never stops the table
+            return {"_status": f"error {e.__class__.__name__}"}
+
+    for r, d in zip(repos, fanout.pmap(one, repos, label="teyla products: probing", name=lambda p: p.name)):
         st = d.pop("_status")
         results[r.name] = (st, dict(d))
         counters = ", ".join(f"{k}={v}" for k, v in d.items()) or "-"
