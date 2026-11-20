@@ -1221,6 +1221,37 @@ def test_template_placeholder_routine_is_ignored_everywhere(env):
     assert text.count("example (template placeholder, ignored)") == 1
 
 
+def test_a_registry_entry_recorded_for_the_placeholder_before_the_upgrade_is_not_vanished(env):
+    repo = env.parent / "repos" / "accounts"
+    (repo / ".git").mkdir(parents=True)
+    toml = repo / "teyla.toml"
+    toml.write_text(PLACEHOLDER_TOML.format(run="echo 'replace me: the draft'"))
+    seen = (NOW - 2 * D).isoformat()
+    schedules.save_registry({"entries": {"routines:accounts:example": {
+        "first_seen": seen, "last_seen": seen,
+        "snapshot": {"source": "routines", "name": "accounts: example", "cadence": "1d", "enabled": True,
+                     "expected_every_s": 86400, "last_run": None, "last_exit": None, "definition": str(toml),
+                     "note": "", "verdict": "UNKNOWN", "elsewhere": False}}}})
+    full, rc = schedules.run(now=NOW, allow_network=False)
+    assert verdicts(full) == {} and rc == 0
+    assert "routines:accounts:example" not in schedules.load_registry().get("entries", {})
+
+
+def test_a_vanished_real_routine_is_still_reported(env):
+    repo = env.parent / "repos" / "accounts"
+    (repo / ".git").mkdir(parents=True)
+    toml = repo / "teyla.toml"
+    toml.write_text('[product]\nname = "accounts"\n')
+    seen = (NOW - 2 * D).isoformat()
+    schedules.save_registry({"entries": {"routines:accounts:nightly": {
+        "first_seen": seen, "last_seen": seen,
+        "snapshot": {"source": "routines", "name": "accounts: nightly", "cadence": "1d", "enabled": True,
+                     "expected_every_s": 86400, "last_run": None, "last_exit": None, "definition": str(toml),
+                     "note": "", "verdict": "OK", "elsewhere": False}}}})
+    full, _ = schedules.run(now=NOW, allow_network=False)
+    assert verdicts(full) == {"routines:accounts:nightly": "VANISHED"}
+
+
 def test_edited_example_routine_is_a_real_routine(env):
     repo = env.parent / "repos" / "accounts"
     (repo / ".git").mkdir(parents=True)

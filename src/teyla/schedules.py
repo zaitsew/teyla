@@ -1050,6 +1050,19 @@ def forget_ignored(reg: dict, prefixes: list[str]) -> None:
         del book[eid]
 
 
+def _is_placeholder_record(eid: str, snap: dict) -> bool:
+    """A `routines:<product>:<name>` record whose teyla.toml still holds that routine as the template's
+    placeholder: nobody scheduled it, so its absence from the list is not a vanished task."""
+    src, _, key = eid.partition(":")
+    name = key.rpartition(":")[2]
+    if src != "routines" or name != routines.PLACEHOLDER_NAME or not snap.get("definition"):
+        return False
+    try:
+        return name in routines.parse_manifest(pathlib.Path(snap["definition"]))["placeholders"]
+    except (OSError, routines.ManifestError):
+        return False
+
+
 def apply_registry(entries: list[dict], reg: dict, now: dt.datetime) -> list[dict]:
     """Fold the current entries into the registry (mutated) and return the full list: the current
     entries with first_seen/last_seen, plus a VANISHED entry for every id seen before and absent now.
@@ -1084,6 +1097,9 @@ def apply_registry(entries: list[dict], reg: dict, now: dt.datetime) -> list[dic
             continue
         if last_seen is None or now - last_seen > VANISHED_KEEP:
             del book[eid]
+            continue
+        if _is_placeholder_record(eid, snap):
+            del book[eid]   # recorded before `teyla routines` learned to ignore the template's example
             continue
         out.append(_from_snapshot(eid, rec, snap, verdict="VANISHED",
                                   note=f"last seen {_date(last_seen)} (first seen {_date(_parse_ts(rec.get('first_seen')))}); "
