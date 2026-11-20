@@ -1,0 +1,257 @@
+{
+  "id": "iphone.settings",
+  "title": "Settings",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/SettingsView.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {
+        "decisions": 6
+      },
+      "title": "Settings",
+      "large": false,
+      "back": "More",
+      "tab": "more",
+      "gap": 20,
+      "kids": [
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 8,
+          "kids": [
+            {
+              "t": "text",
+              "v": "Your Mac",
+              "s": "ios-caption",
+              "c": "ios-label-2",
+              "weight": 600
+            },
+            {
+              "t": "use",
+              "c": "iosGroup",
+              "p": {
+                "kids": [
+                  {
+                    "t": "use",
+                    "c": "iosRow",
+                    "p": {
+                      "title": "Status",
+                      "value": "Paired",
+                      "valueTone": "saving"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosRow",
+                    "p": {
+                      "title": "Folder",
+                      "value": "Teyla"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosRow",
+                    "p": {
+                      "title": "Last update",
+                      "value": "2 min ago"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosRow",
+                    "p": {
+                      "title": "Choose another folder",
+                      "tone": "primary"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosRow",
+                    "p": {
+                      "title": "Pair again",
+                      "tone": "primary"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosRow",
+                    "p": {
+                      "title": "Forget this Mac",
+                      "tone": "danger",
+                      "link": {
+                        "to": "iphone.settings-forget",
+                        "as": "overlay"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 8,
+          "kids": [
+            {
+              "t": "text",
+              "v": "Voice",
+              "s": "ios-caption",
+              "c": "ios-label-2",
+              "weight": 600
+            },
+            {
+              "t": "use",
+              "c": "iosGroup",
+              "p": {
+                "kids": [
+                  {
+                    "t": "use",
+                    "c": "iosRow",
+                    "p": {
+                      "title": "Dictation language",
+                      "value": "English"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 8,
+          "kids": [
+            {
+              "t": "text",
+              "v": "Lab",
+              "s": "ios-caption",
+              "c": "ios-label-2",
+              "weight": 600
+            },
+            {
+              "t": "use",
+              "c": "iosGroup",
+              "p": {
+                "kids": [
+                  {
+                    "t": "h",
+                    "w": "fill",
+                    "gap": 12,
+                    "h": 44,
+                    "align": "center",
+                    "kids": [
+                      {
+                        "t": "text",
+                        "v": "Morning post card",
+                        "s": "ios-body",
+                        "c": "ios-label",
+                        "w": "fill"
+                      },
+                      {
+                        "t": "h",
+                        "w": 51,
+                        "h": 31,
+                        "r": 16,
+                        "fill": "ios-fill",
+                        "justify": "start",
+                        "pad": 2,
+                        "kids": [
+                          {
+                            "t": "v",
+                            "w": 27,
+                            "h": 27,
+                            "r": 14,
+                            "fill": "#FFFFFF",
+                            "kids": []
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosRow",
+                    "p": {
+                      "title": "Today screen",
+                      "value": "Off",
+                      "chevron": true,
+                      "link": {
+                        "to": "iphone.today-stack",
+                        "as": "push"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 8,
+          "kids": [
+            {
+              "t": "text",
+              "v": "What this phone gets",
+              "s": "ios-caption",
+              "c": "ios-label-2",
+              "weight": 600
+            },
+            {
+              "t": "text",
+              "v": "Counts and headlines, not your drafts",
+              "s": "ios-body",
+              "c": "ios-label-2",
+              "w": "fill"
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 8,
+          "kids": [
+            {
+              "t": "text",
+              "v": "About",
+              "s": "ios-caption",
+              "c": "ios-label-2",
+              "weight": 600
+            },
+            {
+              "t": "use",
+              "c": "iosGroup",
+              "p": {
+                "kids": [
+                  {
+                    "t": "use",
+                    "c": "iosRow",
+                    "p": {
+                      "title": "Version",
+                      "value": "1.6 (212)"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

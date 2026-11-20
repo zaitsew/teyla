@@ -1,0 +1,193 @@
+{
+  "id": "iphone.onboarding-paste",
+  "title": "Onboarding · paste the string",
+  "area": "iphone",
+  "presentation": "cover",
+  "source": [
+    "apps/ios/Teyla/UI/OnboardingView.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "tab": null,
+      "gap": 24,
+      "kids": [
+        {
+          "t": "v",
+          "name": "Welcome",
+          "w": "fill",
+          "gap": 8,
+          "align": "center",
+          "pad": [
+            24,
+            0,
+            0,
+            0
+          ],
+          "kids": [
+            {
+              "t": "h",
+              "w": 72,
+              "h": 72,
+              "r": 18,
+              "fill": "primary",
+              "justify": "center",
+              "align": "center",
+              "kids": [
+                {
+                  "t": "text",
+                  "v": "T",
+                  "s": "ios-large-title",
+                  "c": "#FFFFFF",
+                  "weight": 700
+                }
+              ]
+            },
+            {
+              "t": "text",
+              "v": "Teyla",
+              "s": "ios-large-title",
+              "c": "ios-label",
+              "align": "center",
+              "w": "fill"
+            },
+            {
+              "t": "text",
+              "v": "Your Mac's coordinator, on your iPhone.",
+              "s": "ios-body",
+              "c": "ios-label-2",
+              "align": "center",
+              "w": "fill"
+            }
+          ]
+        },
+        {
+          "t": "h",
+          "gap": 8,
+          "justify": "center",
+          "w": "fill",
+          "kids": [
+            {
+              "t": "v",
+              "w": 8,
+              "h": 8,
+              "r": 4,
+              "fill": "ios-fill",
+              "kids": []
+            },
+            {
+              "t": "v",
+              "w": 8,
+              "h": 8,
+              "r": 4,
+              "fill": "primary",
+              "kids": []
+            },
+            {
+              "t": "v",
+              "w": 8,
+              "h": 8,
+              "r": 4,
+              "fill": "ios-fill",
+              "kids": []
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "text",
+              "v": "Pair with your Mac",
+              "s": "ios-section",
+              "c": "ios-label",
+              "w": "fill"
+            },
+            {
+              "t": "use",
+              "c": "iosButton",
+              "p": {
+                "label": "Scan QR code",
+                "kind": "bordered",
+                "size": "large",
+                "icon": "qrcode.viewfinder",
+                "fill": true
+              }
+            },
+            {
+              "t": "text",
+              "v": "Paste the pairing string",
+              "s": "ios-body",
+              "c": "ios-label",
+              "weight": 600
+            },
+            {
+              "t": "h",
+              "w": "fill",
+              "h": 44,
+              "pad": [
+                0,
+                12
+              ],
+              "r": "ios-control",
+              "fill": "ios-fill",
+              "align": "center",
+              "kids": [
+                {
+                  "t": "text",
+                  "v": "teyla-pair:v1:…",
+                  "s": "ios-body",
+                  "c": "ios-label-2"
+                }
+              ]
+            },
+            {
+              "t": "use",
+              "c": "iosButton",
+              "p": {
+                "label": "Pair with this string",
+                "kind": "prominent",
+                "size": "large",
+                "fill": true,
+                "link": "iphone.onboarding-done"
+              }
+            },
+            {
+              "t": "h",
+              "w": "fill",
+              "gap": 6,
+              "align": "start",
+              "kids": [
+                {
+                  "t": "icon",
+                  "n": "exclamationmark.triangle.fill",
+                  "size": 15,
+                  "c": "danger"
+                },
+                {
+                  "t": "text",
+                  "v": "That is not a Teyla pairing string.",
+                  "s": "ios-body",
+                  "c": "danger",
+                  "w": "fill"
+                }
+              ]
+            },
+            {
+              "t": "use",
+              "c": "iosButton",
+              "p": {
+                "label": "Choose another folder",
+                "kind": "text",
+                "fill": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

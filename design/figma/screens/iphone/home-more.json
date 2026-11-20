@@ -1,0 +1,164 @@
+{
+  "id": "iphone.home-more",
+  "title": "Home · Being built, Quiet",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/HomeProducts.swift:200"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {
+        "decisions": 6
+      },
+      "tab": "home",
+      "title": "Home",
+      "large": false,
+      "trailing": "New task",
+      "kids": [
+        {
+          "t": "v",
+          "name": "Being built",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "iosHeader",
+              "p": {
+                "title": "Being built",
+                "note": "5 or more commits this week, no users counted yet. Most commits first",
+                "count": 9
+              }
+            },
+            {
+              "t": "use",
+              "c": "iosPanel",
+              "p": {
+                "kids": [
+                  {
+                    "t": "use",
+                    "c": "iosBuiltRow",
+                    "p": {
+                      "name": "Quill",
+                      "summary": "Reading lists with a share sheet.",
+                      "count": "21",
+                      "link": "iphone.product"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosBuiltRow",
+                    "p": {
+                      "name": "Fern",
+                      "summary": "A plant journal that nags kindly.",
+                      "count": "14",
+                      "link": "iphone.product"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosBuiltRow",
+                    "p": {
+                      "name": "Orbit",
+                      "summary": "Weekly planning for two.",
+                      "count": "9",
+                      "link": "iphone.product"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosBuiltRow",
+                    "p": {
+                      "name": "Pylon",
+                      "summary": "Status page for small teams.",
+                      "count": "8",
+                      "link": "iphone.product"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosBuiltRow",
+                    "p": {
+                      "name": "Mote",
+                      "summary": "Photo inbox cleaner.",
+                      "count": "7",
+                      "link": "iphone.product"
+                    }
+                  }
+                ],
+                "fold": "Show all 9",
+                "link": "iphone.home-folds"
+              }
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "name": "Quiet",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "iosHeader",
+              "p": {
+                "title": "Quiet",
+                "note": "Under 5 commits this week and no new users",
+                "count": 7
+              }
+            },
+            {
+              "t": "use",
+              "c": "iosPanel",
+              "p": {
+                "kids": [
+                  {
+                    "t": "use",
+                    "c": "iosQuietRow",
+                    "p": {
+                      "name": "Moss",
+                      "summary": "Terrarium timer.",
+                      "count": "3",
+                      "link": "iphone.product"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosQuietRow",
+                    "p": {
+                      "name": "Tern",
+                      "summary": "Bird sound log.",
+                      "count": "2",
+                      "link": "iphone.product"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosQuietRow",
+                    "p": {
+                      "name": "Kiln",
+                      "summary": "Pottery batch tracker.",
+                      "count": "1",
+                      "link": "iphone.product"
+                    }
+                  }
+                ],
+                "fold": "Show all 7",
+                "link": "iphone.home-folds"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "id": "iphone.onboarding-scanner",
+  "title": "Onboarding · QR scanner",
+  "area": "iphone",
+  "presentation": "cover",
+  "source": [
+    "apps/ios/Teyla/UI/OnboardingView.swift:1"
+  ],
+  "root": {
+    "t": "v",
+    "name": "Scanner",
+    "w": "fill",
+    "fill": "#0B0B0F",
+    "kids": [
+      {
+        "t": "use",
+        "c": "iosStatusBar",
+        "p": {}
+      },
+      {
+        "t": "v",
+        "w": "fill",
+        "h": 740,
+        "justify": "center",
+        "align": "center",
+        "gap": 24,
+        "kids": [
+          {
+            "t": "v",
+            "w": 240,
+            "h": 240,
+            "r": 24,
+            "stroke": "#FFFFFF@0.9",
+            "fill": "#FFFFFF@0.06",
+            "kids": []
+          },
+          {
+            "t": "text",
+            "v": "Point the camera at the QR code on your Mac.",
+            "s": "ios-body",
+            "c": "#FFFFFF",
+            "align": "center",
+            "w": 280
+          }
+        ]
+      },
+      {
+        "t": "h",
+        "w": "fill",
+        "pad": [
+          0,
+          24
+        ],
+        "h": 60,
+        "align": "center",
+        "kids": [
+          {
+            "t": "h",
+            "pad": [
+              8,
+              16
+            ],
+            "r": 18,
+            "fill": "#FFFFFF@0.2",
+            "link": "close",
+            "kids": [
+              {
+                "t": "text",
+                "v": "Cancel",
+                "s": "ios-body",
+                "c": "#FFFFFF",
+                "weight": 600
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
