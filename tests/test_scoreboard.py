@@ -216,8 +216,8 @@ def test_builds_stale_cache_is_still_shown_and_marked():
 
 def test_the_cache_writer_runs_on_text_json_and_quiet_but_not_china(monkeypatch, capsys):
     monkeypatch.setattr(net, "gate", lambda *a, **k: True)
-    monkeypatch.setattr(testflight, "run", lambda paths=None: [{**tf_row(), "lines": ["atlas  iOS"]}])
-    monkeypatch.setattr(testflight, "run_china", lambda paths=None: [])
+    monkeypatch.setattr(testflight, "run", lambda paths=None, **kw: [{**tf_row(), "lines": ["atlas  iOS"]}])
+    monkeypatch.setattr(testflight, "run_china", lambda paths=None, **kw: [])
     path = testflight.cache_path()
     testflight.cmd_testflight(tf_args(china=True))
     assert not path.exists()
@@ -234,7 +234,7 @@ def test_the_cache_writer_runs_on_text_json_and_quiet_but_not_china(monkeypatch,
 
 def test_no_rows_writes_no_cache(monkeypatch):
     monkeypatch.setattr(net, "gate", lambda *a, **k: True)
-    monkeypatch.setattr(testflight, "run", lambda paths=None: [])
+    monkeypatch.setattr(testflight, "run", lambda paths=None, **kw: [])
     testflight.cmd_testflight(tf_args())
     assert not testflight.cache_path().exists()
 
@@ -242,7 +242,7 @@ def test_no_rows_writes_no_cache(monkeypatch):
 def test_refresh_runs_the_live_check_through_the_gate(monkeypatch, capsys):
     calls = []
     monkeypatch.setattr(net, "gate", lambda what, *a, **k: calls.append(what) or True)
-    monkeypatch.setattr(testflight, "run", lambda paths=None: [tf_row("atlas", uploaded="2026-11-10T09:00:00Z")])
+    monkeypatch.setattr(testflight, "run", lambda paths=None, **kw: [tf_row("atlas", uploaded="2026-11-10T09:00:00Z")])
     # the cache is stamped with the real clock, so the age is read against the real clock too
     monkeypatch.setattr(scoreboard, "_now", lambda: NOW)
     assert cli.main(["today", "score", "--refresh", "--json"]) == 0
@@ -253,7 +253,7 @@ def test_refresh_runs_the_live_check_through_the_gate(monkeypatch, capsys):
 
 def test_refresh_refused_by_safe_mode_still_shows_the_cache(monkeypatch, capsys):
     monkeypatch.setattr(net, "gate", lambda *a, **k: False)
-    monkeypatch.setattr(testflight, "run", lambda paths=None: pytest.fail("the check must not run"))
+    monkeypatch.setattr(testflight, "run", lambda paths=None, **kw: pytest.fail("the check must not run"))
     assert cli.main(["today", "score", "--refresh", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["metrics"]["builds_to_try"]["value"] == "not_measured"
 
@@ -326,7 +326,7 @@ def test_a_run_scoped_to_paths_leaves_the_cache_alone(monkeypatch, capsys):
     monkeypatch.setattr(net, "gate", lambda *a, **k: True)
     monkeypatch.setattr(productize, "find_manifests", lambda paths=None: ["/x/teyla.toml"])
     testflight.write_cache([tf_row("atlas"), tf_row("lens")], now=NOW - 3600)
-    monkeypatch.setattr(testflight, "run", lambda paths=None: [{**tf_row("lens"), "lines": ["lens  iOS"]}])
+    monkeypatch.setattr(testflight, "run", lambda paths=None, **kw: [{**tf_row("lens"), "lines": ["lens  iOS"]}])
     testflight.cmd_testflight(tf_args(paths=["/x"]))
     capsys.readouterr()
     rows, _ = testflight.load_cache()

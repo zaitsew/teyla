@@ -1,0 +1,21 @@
+{
+  "id": "mac.popover-reading",
+  "title": "Menu bar popover, reading",
+  "area": "mac",
+  "presentation": "overlay",
+  "device": {
+    "w": 320,
+    "h": 160
+  },
+  "source": [
+    "apps/mac/Teyla/UI/MenuBar.swift:25"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macPopover",
+    "p": {
+      "brief": "Reading your sessions…",
+      "quickNote": "Quick note ⌥Space"
+    }
+  }
+}

@@ -99,7 +99,7 @@ def sessions_and_spend(pid: str, reg: dict, rows: list[dict], titles: dict[str, 
 
 
 def snapshot(pid: str, now: float | None = None, *, quick: bool = False, reg: dict | None = None, items=None,
-             rows: list[dict] | None = None, titles: dict[str, str] | None = None) -> dict:
+             rows: list[dict] | None = None, titles: dict[str, str] | None = None, note: bool = False) -> dict:
     """The page's facts. Raises KeyError for an id that is neither registered nor `unassigned`."""
     now = figures.now() if now is None else now
     reg = registry.load() if reg is None else reg
@@ -110,6 +110,9 @@ def snapshot(pid: str, now: float | None = None, *, quick: bool = False, reg: di
            "sessions": None, "spend": None}
     if not quick:
         if rows is None:
+            if note:
+                print(f"teyla: reading the last {WINDOW_DAYS} days of sessions for the spend "
+                      f"(about a minute on a large machine; --quick leaves them out)…", file=sys.stderr)
             rows, titles = load_rows()
         out["sessions"], out["spend"] = sessions_and_spend(pid, reg, rows, titles or {})
     return out
@@ -156,6 +159,6 @@ def cmd_show(args) -> int:
     if not known(args.id, reg):
         print(f"teyla: no product {args.id!r}; `teyla product` lists the registered ones.", file=sys.stderr)
         return 2
-    snap = snapshot(args.id, quick=args.quick, reg=reg)
+    snap = snapshot(args.id, quick=args.quick, reg=reg, note=not args.json or sys.stderr.isatty())
     print(json.dumps(snap, indent=1, ensure_ascii=False) if args.json else render(snap))
     return 0

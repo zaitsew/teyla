@@ -146,6 +146,20 @@ let k = "https://real.acme.test/x"
     assert r["findings"] == []
 
 
+def test_xml_namespace_and_dtd_uris_are_identifiers_not_cleartext_calls(tmp_path):
+    src = r'''let svg = "<svg xmlns=\"http://ns.acme.test/2000/svg\" xmlns:x=\"http://ns2.acme.test/x\"></svg>"
+let doc = "<!DOCTYPE plist PUBLIC \"-//Acme//DTD PLIST 1.0//EN\" \"http://dtd.acme.test/DTDs/Plist-1.0.dtd\">"
+let sch = "xsi:schemaLocation=\"http://ns3.acme.test/a http://ns3.acme.test/a.xsd\""
+let gpx = "http://www.topografix.com/GPX/1/1"
+let real = "http://api.acme.test/v1"
+'''
+    d = repo(tmp_path, {"A.swift": src, "docs/PRIVACY.md": table("api.acme.test")})
+    r = hosts.check_repo(d)
+    assert host_names(r) == {"api.acme.test"}
+    cleartext = [f for f in r["findings"] if f["check"] == "cleartext"]
+    assert [f["host"] for f in cleartext] == ["api.acme.test"]          # the real cleartext call stays flagged
+
+
 def test_tests_build_output_and_comments_are_skipped_and_named_in_coverage(tmp_path):
     d = repo(tmp_path, {
         "src/a.ts": "const u = 'https://live.acme.test/a';\n",

@@ -49,7 +49,19 @@
 # xcrun simctl boot X` still puts `sim` to admission. The idiom for an agent:
 #   teyla load --wait --kind build && xcodebuild ...
 #
-# Timeout. `teyla load --admit` is one sysctl and one ps (well under 150 ms), but the hook is
+# Wrappers. Heavy work behind a wrapper is the same work: `eval "xcodebuild ..."` and `sh -c "eval ..."` (the
+# arguments are a script), `... | xargs [opts] xcodebuild ...`, `find ... -exec xcodebuild ... \;` (also
+# -execdir, -ok, -okdir), and `python3 -c` / `perl|ruby|node -e` code that CALLS a spawn API with a heavy
+# command (subprocess.run with a list, os.system, execSync): the string literals of one call are joined and
+# classified like a word list. A script that only prints the word is not heavy. Not seen: a name built at
+# run time (`eval "$cmd"`, `xargs "$tool"`), and a python script read from a here-document or a file.
+# `ssh`, `mosh` and `scp` are never admitted: the command runs on another machine, so the load of this Mac
+# says nothing about it. The host is not inspected (`ssh localhost xcodebuild` passes too).
+#
+# Timeout and cost. The classifier above takes about 10 ms. The decision is `teyla load --admit`: one
+# sysctl and one ps, plus the start of Python. Measured 2026-11-20: 0.86-1.03 s on an idle Mac (1.23 s
+# under load), because `teyla` imported every command module to parse its arguments. `teyla load` now
+# builds only its own parser: 0.23-0.28 s instead of 2.3-3.2 s on a Mac at load average 100. The hook is
 # registered with a 15 s timeout in every harness. A timed-out hook is a non-blocking error in
 # Claude Code (the call proceeds) and fail-open in Codex and Grok, so there is no need for a
 # watchdog process here; sh has no portable timeout and a hand-rolled one is how orphans start.
@@ -107,6 +119,8 @@ kinds=$(printf '%s' "$payload" | awk '
       if (ch == "\\") { cur = cur ch substr(s, i + 1, 1); i++; continue }
       if (ch == "\"" || ch == "\047") { q = ch; cur = cur ch; continue }
       if (ch == "$" && substr(s, i + 1, 1) == "(") { out[++n] = cur; cur = ""; i++; continue }
+      # `{` opens a group only before whitespace; `{}` (find -exec, xargs -I{}) and ${VAR} are words.
+      if (ch == "{" && i < len && substr(s, i + 1, 1) !~ /^[ \t\n]$/) { cur = cur ch; continue }
       if (ch ~ /[;&|(`{\n]/) { out[++n] = cur; cur = ""; continue }
       cur = cur ch
     }
@@ -127,6 +141,33 @@ kinds=$(printf '%s' "$payload" | awk '
       }
       if (ch == q) break
       o = o ch
+    }
+    return o
+  }
+  # The script of `eval A B C`: every argument, unquoted one by one and joined with spaces, as eval joins
+  # them. (`eval "echo ready;" "xcodebuild test"` runs the second string too.)
+  function all_args(r,    o, rest, q, i, len, ch, nx, arg, n) {
+    o = ""; rest = r
+    while (1) {
+      sub(/^[ \t]+/, "", rest)
+      if (rest == "") break
+      q = substr(rest, 1, 1); len = length(rest); arg = ""
+      if (q == "\"" || q == "\047") {
+        for (i = 2; i <= len; i++) {
+          ch = substr(rest, i, 1)
+          if (q == "\"" && ch == "\\") {
+            nx = substr(rest, i + 1, 1)
+            if (nx == "\"" || nx == "\\" || nx == "$") { arg = arg nx; i++; continue }
+            arg = arg ch; continue
+          }
+          if (ch == q) break
+          arg = arg ch
+        }
+        rest = substr(rest, i + 1)
+      } else {
+        match(rest, /^[^ \t]+/); arg = substr(rest, 1, RLENGTH); rest = substr(rest, RLENGTH + 1)
+      }
+      o = o (o == "" ? "" : " ") arg
     }
     return o
   }
@@ -222,12 +263,49 @@ kinds=$(printf '%s' "$payload" | awk '
     }
     return out
   }
+  # The code of `python3 -c CODE` / `perl|ruby|node -e CODE`, left in icode. Returns 1 when c is such an interpreter.
+  function interp_code(b, tok, p, m,    i, want, k) {
+    if (b ~ /^python[0-9.]*$/) want = "c"
+    else if (b ~ /^(perl|ruby|node|nodejs)$/) want = "e"
+    else return 0
+    icode = ""
+    for (i = p + 1; i <= m; i++) {
+      if (tok[i] ~ ("^-[A-Za-z]*" want "$")) {
+        for (k = i + 1; k <= m; k++) icode = icode (icode == "" ? "" : " ") tok[k]
+        return 1
+      }
+    }
+    return 1
+  }
+  # What a spawn call in interpreter code would run. Only code that CALLS a spawn API counts
+  # (subprocess.run(, os.system(, execSync(, system(, Popen(), so a script that only prints the word runs
+  # nothing. Each run of string literals separated only by commas and spaces (a list
+  # of names, or the one string of os.system) is joined into a command and
+  # classified like a word list. A name built at run time cannot be seen.
+  function spawn_literals(code, depth,    len, i, ch, q, lit, cmd, gap) {
+    if (code !~ /(subprocess\.[A-Za-z_]+|os\.(system|popen|exec[a-z]*|spawn[a-z]*)|Popen|check_call|check_output|[Ee]xec(Sync|File|FileSync)?|[Ss]pawn(Sync)?|system|popen)[ \t]*\(/) return
+    len = length(code); cmd = ""; gap = ""; q = ""
+    for (i = 1; i <= len; i++) {
+      ch = substr(code, i, 1)
+      if (q != "") {
+        if (ch == "\\") { lit = lit substr(code, i + 1, 1); i++; continue }
+        if (ch == q) { cmd = cmd (cmd == "" ? "" : " ") lit; q = ""; gap = ""; continue }
+        lit = lit ch; continue
+      }
+      if (ch == "\"" || ch == "\047") {
+        if (cmd != "" && gap ~ /[^ \t\n,]/) { run(cmd, depth + 1); cmd = "" }
+        q = ch; lit = ""; continue
+      }
+      gap = gap ch
+    }
+    if (cmd != "") run(cmd, depth + 1)
+  }
   function run(script, depth,    segs, n, i) {
     n = qsplit(strip_heredocs(script), segs)
     for (i = 1; i <= n; i++) classify(segs[i], depth)
   }
   # Classify one segment and emit its kind (nothing when it is not heavy).
-  function classify(seg, depth,    nt, raw, tok, m, k, p, t, b, c, a, na, i, a1, tasks, rest, hasw, kw, cw, saved) {
+  function classify(seg, depth,    nt, raw, tok, m, k, p, t, b, c, a, na, i, a1, tasks, rest, hasw, kw, cw, saved, kk) {
     nt = split(seg, raw, /[ \t]+/); m = 0
     for (k = 1; k <= nt; k++) if (raw[k] != "") tok[++m] = raw[k]
     p = 1
@@ -262,6 +340,41 @@ kinds=$(printf '%s' "$payload" | awk '
       if (a[i] ~ /^-/ || a[i] ~ /^\+/) continue
       a1 = a[i]; break
     }
+    # ssh runs its command on ANOTHER machine: that is not the load of this Mac, so it is not admitted here.
+    # (The host is not inspected: `ssh localhost xcodebuild` passes too.)
+    # (Nothing is emitted for it: it is not in the list of heavy tools below.)
+    # `eval "xcodebuild ..."`: the arguments are a script, like sh -c.
+    if (c == "eval") {
+      rest = ""
+      for (i = p + 1; i <= m; i++) rest = rest (rest == "" ? "" : " ") tok[i]
+      saved = curdir
+      if (depth < 4) run(all_args(rest), depth + 1)
+      curdir = saved
+      return
+    }
+    # `... | xargs [opts] CMD ...`: CMD runs once per batch of input.
+    if (c == "xargs") {
+      i = p + 1
+      while (i <= m && tok[i] ~ /^-/) { if (tok[i] ~ /^-[IJLnPsEdaRS]$/) i++; i++ }
+      rest = ""
+      for (; i <= m; i++) rest = rest (rest == "" ? "" : " ") tok[i]
+      if (rest != "" && depth < 4) classify(rest, depth + 1)
+      return
+    }
+    # `find ... -exec CMD ... \;` (also -execdir, -ok, -okdir; ended by ; or +).
+    if (c == "find") {
+      for (i = 1; i <= na; i++) {
+        if (a[i] ~ /^-(exec|execdir|ok|okdir)$/) {
+          rest = ""
+          for (kk = i + 1; kk <= na && a[kk] != ";" && a[kk] != "\\;" && a[kk] != "+"; kk++) rest = rest (rest == "" ? "" : " ") tok[p + kk]
+          if (rest != "" && depth < 4) classify(rest, depth + 1)
+          i = kk
+        }
+      }
+      return
+    }
+    # python3 -c with a subprocess.run call whose list names xcodebuild
+    if (interp_code(c, tok, p, m)) { if (depth < 4) spawn_literals(script_of(icode), depth); return }
     if (c == "cd" || c == "pushd") {
       rest = ""
       for (i = p + 1; i <= m; i++) rest = rest (rest == "" ? "" : " ") tok[i]

@@ -1,0 +1,90 @@
+{
+  "id": "iphone.decisions-done",
+  "title": "Decisions · Done since yesterday",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/DecisionsView.swift:298",
+    "apps/ios/Teyla/UI/Cards.swift:157"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {
+        "decisions": 6
+      },
+      "title": "Decisions",
+      "large": false,
+      "tab": "decisions",
+      "kids": [
+        {
+          "t": "use",
+          "c": "iosFold",
+          "p": {
+            "title": "Done since yesterday · 6",
+            "open": true,
+            "kids": [
+              {
+                "t": "use",
+                "c": "iosDoneCard",
+                "p": {
+                  "headline": "Quill · 2h ago",
+                  "status": "Done",
+                  "title": "Reading-list import behind a flag",
+                  "result": [
+                    "Import works for lists up to 500 items.",
+                    "41 tests pass."
+                  ]
+                }
+              },
+              {
+                "t": "use",
+                "c": "iosDoneCard",
+                "p": {
+                  "headline": "Atlas · 3h ago",
+                  "status": "Needs you",
+                  "title": "Trial email rewrite",
+                  "result": [
+                    "Three drafts are in the pull request."
+                  ],
+                  "needs": "Pick the subject line.",
+                  "links": [
+                    "Pull request 98"
+                  ]
+                }
+              },
+              {
+                "t": "use",
+                "c": "iosDoneCard",
+                "p": {
+                  "headline": "Pebble · 6h ago",
+                  "status": "Failed",
+                  "title": "Store screenshots for the new listing",
+                  "result": [
+                    "The capture stopped at the sign-in screen."
+                  ]
+                }
+              },
+              {
+                "t": "use",
+                "c": "iosButton",
+                "p": {
+                  "label": "Show all 6",
+                  "kind": "text",
+                  "fill": false
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

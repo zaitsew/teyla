@@ -1,0 +1,147 @@
+{
+  "id": "iphone.today-stack",
+  "title": "Lab · Today, stack",
+  "area": "iphone",
+  "presentation": "push",
+  "source": [
+    "apps/ios/Teyla/UI/TodayView.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "title": "Today",
+      "tab": null,
+      "gap": 20,
+      "kids": [
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "iosHeader",
+              "p": {
+                "title": "Decisions",
+                "trailing": "See all 6",
+                "link": "iphone.decisions"
+              }
+            },
+            {
+              "t": "use",
+              "c": "iosPanel",
+              "p": {
+                "kids": [
+                  {
+                    "t": "use",
+                    "c": "iosDecisionRow",
+                    "p": {
+                      "meta": "Atlas · 2d · Pay",
+                      "title": "Renew the error-tracking plan for Atlas at $29 a month?",
+                      "link": "iphone.decisions"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosDecisionRow",
+                    "p": {
+                      "meta": "Atlas · 2d",
+                      "title": "Should the trial end on the Team plan or the Solo plan?",
+                      "link": "iphone.decisions"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "iosHeader",
+              "p": {
+                "title": "Content"
+              }
+            },
+            {
+              "t": "use",
+              "c": "iosGroup",
+              "p": {
+                "kids": [
+                  {
+                    "t": "use",
+                    "c": "iosEmptyRow",
+                    "p": {
+                      "icon": "square.and.pencil",
+                      "title": "No post card.",
+                      "detail": "Turn on Morning post card in More, under Settings, Lab."
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosButton",
+                    "p": {
+                      "label": "Open More",
+                      "kind": "text",
+                      "link": {
+                        "to": "iphone.more",
+                        "as": "tab"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "iosHeader",
+              "p": {
+                "title": "Builds to try"
+              }
+            },
+            {
+              "t": "use",
+              "c": "iosGroup",
+              "p": {
+                "kids": [
+                  {
+                    "t": "use",
+                    "c": "iosRow",
+                    "p": {
+                      "icon": "iphone",
+                      "title": "Quill",
+                      "detail": "iOS · build 32",
+                      "value": "Uploaded 18 Nov"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosRow",
+                    "p": {
+                      "icon": "iphone",
+                      "title": "Pebble",
+                      "detail": "iOS · build 17",
+                      "value": "Uploaded 16 Nov"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
