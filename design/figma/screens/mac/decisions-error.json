@@ -1,0 +1,85 @@
+{
+  "id": "mac.decisions-error",
+  "title": "Decisions, could not read state",
+  "area": "mac",
+  "presentation": "tab",
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/UI/HomeView.swift:202"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macWindow",
+    "p": {
+      "selected": "decisions",
+      "badges": {},
+      "linked": [
+        "today",
+        "home",
+        "decisions",
+        "products",
+        "settings"
+      ],
+      "live": "offline",
+      "kids": [
+        {
+          "t": "v",
+          "w": 720,
+          "gap": 24,
+          "kids": [
+            {
+              "t": "use",
+              "c": "macPageHeader",
+              "p": {
+                "title": "Decisions"
+              }
+            },
+            {
+              "t": "v",
+              "w": "fill",
+              "gap": 8,
+              "kids": [
+                {
+                  "t": "h",
+                  "gap": 6,
+                  "align": "center",
+                  "kids": [
+                    {
+                      "t": "icon",
+                      "n": "exclamationmark.triangle",
+                      "size": 14,
+                      "c": "needs-you"
+                    },
+                    {
+                      "t": "text",
+                      "v": "Could not read state",
+                      "s": "mac-card-title",
+                      "c": "needs-you"
+                    }
+                  ]
+                },
+                {
+                  "t": "text",
+                  "v": "The teyla command did not answer within 30 seconds.",
+                  "s": "mac-body",
+                  "c": "text-secondary",
+                  "w": "fill"
+                },
+                {
+                  "t": "use",
+                  "c": "macBtn",
+                  "p": {
+                    "text": "Try again"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -109,7 +109,7 @@ if [ -z "$py" ] || [ ! -x "$py" ]; then
 fi
 if [ -z "$py" ]; then
     # No teyla executable to read an interpreter from: use python3 only if it really has the package.
-    if command -v python3 >/dev/null 2>&1 && python3 -c 'import teyla.control.hook' >/dev/null 2>&1; then
+    if command -v python3 >/dev/null 2>&1 && python3 -m teyla.control.hook --probe </dev/null >/dev/null 2>&1; then
         py=python3
     else
         echo "teyla: no python with the teyla package was found, so the kill switch is the only control checked and this call is allowed. Install teyla, or set TEYLA_PYTHON." >&2

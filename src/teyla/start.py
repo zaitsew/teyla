@@ -217,9 +217,21 @@ def _checklist(pl: dict) -> list | None:
 
 
 def cmd_start(args) -> int:
-    if not (args.agent or args.json):       # stdout stays the card; the wait is announced on stderr
+    from teyla.adapters import cache
+    cache.set_read_only()                   # start changes nothing until the person accepts
+    try:
+        return _cmd_start(args)
+    finally:
+        cache.set_read_only(False)
+
+
+def _cmd_start(args) -> int:
+    # stdout stays the card (or the JSON); the wait is announced on stderr. `--json` is read by the apps, so it
+    # stays silent there unless stderr is a terminal; `--agent` printed nothing for a minute and now says so.
+    if args.agent or not args.json or sys.stderr.isatty():
         n = diagnose.count_sessions(args.days)
-        print(f"Reading {plural(n, 'session') if n is not None else 'your sessions'} from the last {plural(args.days, 'day')}…", file=sys.stderr)
+        print(f"Reading {plural(n, 'session') if n is not None else 'your sessions'} from the last {plural(args.days, 'day')}…"
+              + (" (about a minute on a large machine)" if args.agent or args.json else ""), file=sys.stderr)
     pl, offers = payload(args.days, for_agent=bool(args.agent))
     if args.agent or args.json:
         print(json.dumps(pl, indent=2))

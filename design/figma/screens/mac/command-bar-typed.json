@@ -1,0 +1,34 @@
+{
+  "id": "mac.command-bar-typed",
+  "title": "Command bar, typed",
+  "area": "mac",
+  "presentation": "overlay",
+  "device": {
+    "w": 560,
+    "h": 380
+  },
+  "source": [
+    "apps/mac/Teyla/UI/CommandBarView.swift:49"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macCommandBar",
+    "p": {
+      "query": "free",
+      "rows": [
+        {
+          "icon": "internaldrive",
+          "title": "Free space: Disk is low",
+          "detail": "teyla sweep --yes · asks before it runs",
+          "code": true,
+          "on": true
+        },
+        {
+          "icon": "shippingbox",
+          "title": "Open Fern",
+          "detail": "Product page"
+        }
+      ]
+    }
+  }
+}

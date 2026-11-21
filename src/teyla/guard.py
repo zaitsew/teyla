@@ -460,7 +460,9 @@ def cmd_tick(args, env: Env | None = None) -> int:
 # --- status ------------------------------------------------------------------------------------------------
 
 def _row_line(r: dict) -> str:
-    swap = f"swap {load.gb(r['swap_used_bytes'])}/{load.gb(r['ram_bytes'])}" if r["swap_used_bytes"] is not None else "swap ?"
+    pct = load._pct(r["swap_used_bytes"], r["ram_bytes"]) if r["swap_used_bytes"] is not None else None
+    swap = ("swap ?" if r["swap_used_bytes"] is None else f"swap {load.gb(r['swap_used_bytes'])}"
+            + (f" ({pct:.0f}% of RAM)" if pct is not None else ""))
     load1 = "?" if r["load1"] is None else f"{r['load1']:.1f}"
     return (f"{r['time']}  {r['level']:9} {swap}  load {load1}  sims {r['sims']}  builds {r['builds']}"
             f"  daemons {load.gb(r['daemon_rss_bytes'])}")

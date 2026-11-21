@@ -4,7 +4,7 @@ from __future__ import annotations
 import datetime as _dt
 from collections import Counter, defaultdict
 
-from . import config
+from . import config, costing
 from .adapters import Session
 from .pricing import cost_usd, tier
 
@@ -34,29 +34,33 @@ def _subagent_project(acc: dict, s: Session, extra_top=()) -> None:
 
 
 def metrics(sessions: list[Session], days: int | None = None) -> dict:
+    active = sessions
     if days:
+        # Tokens and dollars use the sessions and the window `teyla spend` counts (costing.py): a
+        # session active in the window, its messages cut by local day. Before this change they came
+        # from the sessions that *started* in the window, priced over their whole life. Turns,
+        # corrections, giant sessions and the headless table still read the sessions that started in it.
+        active = costing.candidates(sessions, days)
         cutoff = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
         sessions = [s for s in sessions if (s.first or "")[:19] >= cutoff]
     m: dict = {"n_sessions": len(sessions), "days": days}
     tok = Counter(); by_model = defaultdict(Counter); by_project = defaultdict(lambda: defaultdict(Counter))
-    by_harness = Counter(); by_day = defaultdict(Counter); cost = 0.0; cost_known = 0; cost_unknown = set()
+    by_harness = Counter(); by_day = defaultdict(Counter)
     user_turns = corr = 0; agents = Counter(); giant = []; skills = Counter(); tools = Counter()
     corr_texts = []; gov = []
     sub_projects: dict = {}
     extra_top = (config.load().get("spend") or {}).get("a20_models") or []
     batch_by_harness = Counter()
+    ledger = costing.Ledger()
+    for s in active:
+        for model, u in (costing.session_usage(s, days) if days else s.usage).items():
+            by_model[model].update(u); tok.update(u)
+            ledger.add(model, u)
+            by_project[s.project][model].update(u)
     for s in sessions:
         by_harness[s.harness] += 1
         if s.batch:
             batch_by_harness[s.harness] += 1
-        for model, u in s.usage.items():
-            by_model[model].update(u); tok.update(u)
-            c = cost_usd(model, u)
-            if c is None:
-                cost_unknown.add(model)
-            else:
-                cost += c; cost_known += 1
-            by_project[s.project][model].update(u)
         by_day[s.day]["sessions"] += 1; by_day[s.day]["output_tokens"] += s.tokens["output_tokens"]
         if not s.batch:
             user_turns += s.n_user; corr += s.n_corr
@@ -88,7 +92,8 @@ def metrics(sessions: list[Session], days: int | None = None) -> dict:
         tokens=dict(tok), by_model={k: dict(v) for k, v in by_model.items()},
         by_project={p: {k: dict(v) for k, v in mm.items()} for p, mm in by_project.items()},
         by_harness=dict(by_harness), batch_by_harness=dict(batch_by_harness), by_day={d: dict(v) for d, v in sorted(by_day.items())},
-        cost_estimate_usd=round(cost, 2), cost_models_unknown=sorted(cost_unknown),
+        cost_estimate_usd=round(ledger.usd, 2), cost_models_unknown=sorted(ledger.unpriced),
+        cost_unpriced_tokens=dict(ledger.unpriced), cost_rule=costing.window_rule(days) if days else "window: all time",
         user_turns=user_turns, corrections=corr,
         correction_rate=round(corr / user_turns, 3) if user_turns else None,
         subagents=dict(agents), subagent_inherit_rate=round(agents["inherit"] / sum(agents.values()), 2) if agents else None,

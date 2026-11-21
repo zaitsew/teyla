@@ -1936,6 +1936,24 @@ def test_hk3_no_teyla_anywhere_fails_open_with_one_line_and_never_crashes(tmp_pa
     assert "Traceback" not in r.stderr and "No module named" not in r.stderr
 
 
+def test_hk3_a_path_python3_that_has_teyla_passes_the_probe_and_enforces(tmp_path):
+    """No `teyla` script, but the `python3` on PATH imports the package: the wrapper's `-m ... --probe` (no
+    inline `-c` program, which the plugin directory refuses) accepts it, and the marker is enforced."""
+    home = tmp_path / "home"; (home / "active-runs").mkdir(parents=True)
+    (home / "active-runs" / "20260910T070000-abc").write_text(f"{os.getpid()}\n")
+    env = _bare_env(tmp_path, home, with_teyla=False)
+    (tmp_path / "bin" / "python3").write_text(f'#!/bin/sh\nPYTHONPATH="{SRC}" exec "{sys.executable}" "$@"\n')
+    r = _run_hook(env, payload("Bash", {"command": "ls"}))
+    assert r.returncode == 2, r.stderr
+    assert "a run is active but this session has no grants" in r.stderr, r.stderr
+
+
+def test_the_hook_module_probe_exits_0_without_reading_stdin():
+    r = subprocess.run([sys.executable, "-m", "teyla.control.hook", "--probe"], stdin=subprocess.DEVNULL,
+                       capture_output=True, text=True, env={**os.environ, "PYTHONPATH": str(SRC)}, timeout=30)
+    assert r.returncode == 0 and r.stdout == "", r.stderr
+
+
 def test_hk3_the_kill_switch_still_denies_with_no_python_at_all(tmp_path):
     home = tmp_path / "home"; home.mkdir()
     (home / "KILL").write_text("stop\n")

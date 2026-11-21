@@ -40,7 +40,7 @@ Some hosts are never listed as findings:
 
 - Placeholders: `example.com`, `example.org`, `example.net` and their subdomains, `example.test`, `localhost`,
   `*.local`, `*.localhost`, `*.invalid`.
-- XML namespaces such as `www.w3.org`.
+- XML namespaces such as `www.w3.org`, and any URI that follows `xmlns=`, `schemaLocation=` or sits inside `<!DOCTYPE ...>`: an identifier, never fetched.
 - Loopback, private-range, link-local and `*.internal` hosts. These are listed under `local`, never a FIX.
 
 ## The privacy table

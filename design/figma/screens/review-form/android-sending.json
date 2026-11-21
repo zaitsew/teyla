@@ -1,0 +1,25 @@
+{
+  "id": "review-form.android-sending",
+  "title": "Review form, Android: Sending",
+  "area": "review-form",
+  "presentation": "overlay",
+  "device": {
+    "w": 412,
+    "h": 892
+  },
+  "source": [
+    "packages/review-android/teyla-review/src/main/kotlin/teyla/review/ReviewFlow.kt:144",
+    "packages/review-android/teyla-review/src/main/kotlin/teyla/review/ReviewStrings.kt:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "reviewAndroid",
+    "p": {
+      "step": "comment",
+      "mark": "spot",
+      "text": "The Quill export button does nothing when I tap it twice.",
+      "sending": true,
+      "links": {}
+    }
+  }
+}
