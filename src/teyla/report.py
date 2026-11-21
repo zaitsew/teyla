@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as _dt
 import json
 
+from . import costing
 
 
 def _harness_count(harness: str, n: int, batch: dict) -> str:
@@ -32,12 +33,18 @@ def markdown(m: dict, findings: list[dict], *, title="Teyla adoption report", in
     L += ["## Headline", "", "| metric | value |", "|---|---|",
           f"| output tokens | {_fmt(t.get('output_tokens',0))} |",
           f"| cache read / cache write / fresh input | {_fmt(t.get('cache_read_input_tokens',0))} / {_fmt(t.get('cache_creation_input_tokens',0))} / {_fmt(t.get('input_tokens',0))} |",
-          f"| API-equivalent cost (list prices; on a subscription this is what you would have paid) | ${m['cost_estimate_usd']:,.0f}{' · unknown: ' + ', '.join(m['cost_models_unknown']) if m['cost_models_unknown'] else ''} |",
+          f"| API-equivalent cost (list prices; on a subscription this is what you would have paid) | ${m['cost_estimate_usd']:,.0f} |",
           f"| output on orchestrate-tier models | {int(m['orchestrator_share']*100)}% |",
           f"| subagent calls / inherited top model | {sum(m['subagents'].values())} / {int((m['subagent_inherit_rate'] or 0)*100)}% |",
           f"| human turns / correction-shaped | {m['user_turns']} / {m['corrections']} ({(m['correction_rate'] or 0)*100:.1f}%) |",
           f"| cache-read tokens per output token | {m['cache_read_ratio']}x |",
           f"| giant sessions (>8 MB or >12 active h) | {len(m['giant_sessions'])} |", ""]
+    # One definition of the cost, the same as `teyla spend` (costing.py); a model with no price is
+    # named with its tokens, never left out silently. Grok stores no tokens: it is in the headless table.
+    L += [f"Cost and tokens: {m.get('cost_rule') or 'window: all time'}. Grok is priced from its own ledger "
+          "(headless table), so `teyla spend`'s total is this plus Grok.", ""]
+    L += [f"{line}" for line in costing.unpriced_lines(m.get("cost_unpriced_tokens") or {})] + (
+        [""] if m.get("cost_unpriced_tokens") else [])
     L += ["## Advice", ""]
     if not findings:
         L.append("Nothing to flag in this window.")

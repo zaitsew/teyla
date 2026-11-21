@@ -17,7 +17,8 @@ teyla undo O1               # put back only the key Teyla wrote
 
 1. **Diagnose.** Teyla loads every session of the window (Claude Code, Codex, Grok, Hermes, Cursor) and the
    subagent files of Claude Code. Nothing leaves the machine and nothing is written. A machine with no sessions
-   prints one line saying to use an agent for a day and run `teyla start` again.
+   prints one line saying to use an agent for a day and run `teyla start` again,
+   then the packs that need no history (every pack but Token cost) and how to turn one on with `teyla features`.
 2. **Summarise.** A card of at most 12 lines, numbers first: the total at API list price, the share spent
    re-reading and storing context, the sessions that ran past 250k tokens, what subagents cost and how much of
    that was Opus, and the questions waiting on you. A subscription bills differently, and the card says so.

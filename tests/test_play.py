@@ -303,6 +303,15 @@ def test_tool_failures_are_one_line(tmp_path, monkeypatch, capsys, kw):
     assert rc == 1 and cap.err == "" and len(cap.out.strip().splitlines()) == 1
 
 
+def test_gcloud_sign_in_failure_names_the_fix(tmp_path, monkeypatch, capsys):
+    platform_toml(tmp_path)
+    product(tmp_path)
+    fake_tool(monkeypatch, "", rc=1, stderr="error: gcloud could not print an access token\n       sign in first\n")
+    rc, cap = go(capsys)
+    assert rc == 1 and "gcloud could not print an access token (fix: run `gcloud auth login`, then retry)" in cap.out
+    assert len(cap.out.strip().splitlines()) == 1
+
+
 def test_nonzero_exit_names_the_tool_message(tmp_path, monkeypatch, capsys):
     platform_toml(tmp_path)
     product(tmp_path)

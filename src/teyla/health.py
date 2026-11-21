@@ -627,6 +627,15 @@ def find_binary(name: str) -> str | None:
     return None
 
 
+def app_only(name: str, home: pathlib.Path | None = None) -> bool:
+    """A harness whose only trace is a CLI inside a GUI app bundle: not on PATH, no `~/.local/bin` copy, no home
+    directory. The app is there; the CLI was never set up. Doctor reports one INFO line and runs nothing."""
+    if name not in BINARY or shutil.which(BINARY[name]) or _home(name, home).is_dir():
+        return False
+    app = APP_BINARY.get(name)
+    return bool(app and os.access(app, os.X_OK)) and not os.access(str(HOME / ".local" / "bin" / BINARY[name]), os.X_OK)
+
+
 def version(binary: str) -> tuple[str | None, str | None]:
     """(version, error). A non-zero exit or no version-looking text is the error, first line."""
     try:
@@ -792,7 +801,7 @@ def active_names(home: pathlib.Path | None = None) -> list[str]:
     in config.toml does not switch off: the ones doctor, `harness verify` and advice look at."""
     from . import config
     off = config.disabled_harnesses()[0]
-    return [n for n in NAMES if n not in off and (find_binary(n) or _home(n, home).is_dir())]
+    return [n for n in NAMES if n not in off and not app_only(n, home) and (find_binary(n) or _home(n, home).is_dir())]
 
 
 def doctor_checks(sessions_by_harness: dict | None = None, home: pathlib.Path | None = None) -> list[dict]:

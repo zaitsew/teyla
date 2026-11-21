@@ -184,7 +184,7 @@ def test_a_store_product_with_no_notes_yet_is_skipped_not_stale(tmp_path, toml):
 @pytest.mark.parametrize("rel", ["content/store/play/en-US/release_notes.txt", "apps/store/listing/ios/en-US/whats_new.txt",
                                  "docs/whats-new-1.2.txt", "custom/notes/en.txt"])
 def test_notes_in_other_places_are_found_and_go_stale(tmp_path, rel):
-    r = product(tmp_path, '[freshness]\nwhats_new = ["custom/notes/*.txt"]\n', files={rel: "Share a trip as a link\n"})
+    r = product(tmp_path, '[freshness]\nwhats_new = ["custom/notes/*.txt"]\nstore_paths = ["**"]\n', files={rel: "Share a trip as a link\n"})
     features(r, 11)
     c = checks(freshness.run()[0])["whats-new"]
     assert c["verdict"] == "stale" and c["changes"] == 11 and c["path"] != "docs/whats-new"
@@ -667,3 +667,78 @@ def test_session_start_names_this_repo_s_stale_items_and_no_other_repo_s(tmp_pat
                          env={"HOME": str(home), "PATH": "/usr/bin:/bin"}).stdout
     assert "teyla: stale, fix it in this session: app README: 60 user-facing changes" in out
     assert "other README" not in out
+
+
+# --- store hold, store paths, one baseline with `teyla whats-new draft` -------------------------------------
+
+def _store_product(tmp_path, toml=""):
+    r = product(tmp_path, toml, files={"apps/store/listing/en-US/description.txt": "d",
+                                       "docs/whats-new/1.0/en.txt": "Share a trip as a link\n"})
+    return r
+
+
+def _app_merges(repo, n, start=1):
+    for i in range(start, start + n):
+        _merge_files(repo, i, f"App feature {i}", [f"apps/ios/Feature{i}.swift"])
+
+
+def test_a_hold_silences_store_items_and_leaves_the_readme(tmp_path, capsys):
+    r = _store_product(tmp_path, '[[freshness.hold]]\nitems = ["whats-new", "listing"]\nsince = 2026-10-27\n'
+                                 'reason = "submission hold"\n')
+    _app_merges(r, 11)
+    row = freshness.run()[0]
+    c = checks(row)
+    assert c["whats-new"]["verdict"] == "held" and c["listing"]["verdict"] == "held"
+    assert c["readme"]["verdict"] == "stale"
+    assert row["holds"][0]["line"] == "held since 2026-10-27: submission hold"
+    assert [k for k, _ in freshness.problem_lines([row])] == ["freshness|app|readme"]
+    text = freshness.render_text([row])
+    assert "held since 2026-10-27: submission hold" in text and "whats-new" not in text.split("\n")[0]
+    assert "held" in json.dumps(row)
+
+
+def test_a_hold_without_items_covers_every_store_check(tmp_path):
+    r = _store_product(tmp_path, '[freshness.hold]\nsince = 2026-10-27\nreason = "r"\n')
+    _app_merges(r, 11)
+    c = checks(freshness.run()[0])
+    assert {c[k]["verdict"] for k in ("whats-new", "listing", "screenshots")} == {"held"}
+
+
+def test_an_expired_hold_reports_again(tmp_path):
+    r = _store_product(tmp_path, '[[freshness.hold]]\nitems = ["whats-new"]\nsince = 2026-10-27\n'
+                                 'until = 2026-11-01\nreason = "r"\n')
+    _app_merges(r, 11)
+    row = freshness.run()[0]
+    assert checks(row)["whats-new"]["verdict"] == "stale" and row["holds"] == []
+    before = dt.datetime(2026, 10, 30, tzinfo=dt.timezone.utc)
+    assert checks(freshness.run(now=before)[0])["whats-new"]["verdict"] == "held"
+
+
+def test_store_paths_filter_cli_only_commits(tmp_path):
+    r = _store_product(tmp_path, '[freshness]\nstore_paths = ["apps/ios/**"]\n')
+    for i in range(1, 12):
+        _merge_files(r, i, f"CLI feature {i}", [f"src/tool{i}.py"])
+    c = checks(freshness.run()[0])
+    assert c["whats-new"]["verdict"] == "ok" and c["whats-new"]["changes"] == 0
+    assert c["readme"]["verdict"] == "stale" and c["readme"]["changes"] == 11    # README still counts everything
+    _app_merges(r, 11, start=12)
+    assert checks(freshness.run()[0])["whats-new"]["changes"] == 11
+
+
+def test_apps_folder_is_the_default_store_path(tmp_path):
+    r = _store_product(tmp_path)
+    for i in range(1, 12):
+        _merge_files(r, i, f"CLI feature {i}", [f"src/tool{i}.py"])
+    assert checks(freshness.run()[0])["whats-new"]["changes"] == 0
+
+
+def test_whats_new_draft_and_freshness_agree(tmp_path, capsys):
+    r = _store_product(tmp_path, '[freshness]\nstore_paths = ["apps/ios/**"]\n')
+    for i in range(1, 5):
+        _merge_files(r, i, f"CLI feature {i}", [f"src/tool{i}.py"])
+    _app_merges(r, 3, start=5)
+    git(r, "tag", "v9.9.9")        # a release tag newer than the notes must not move the baseline
+    n = checks(freshness.run()[0])["whats-new"]["changes"]
+    assert n == 3
+    assert main(["whats-new", "draft", str(r), "--version", "2.0", "--json"]) == 0
+    assert len(json.loads(capsys.readouterr().out)["user_facing"]) == n

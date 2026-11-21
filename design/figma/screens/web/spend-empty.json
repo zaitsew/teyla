@@ -1,0 +1,30 @@
+{
+  "area": "web",
+  "presentation": "push",
+  "id": "web.spend-empty",
+  "title": "Spend, no sessions",
+  "device": {
+    "w": 1440,
+    "h": 520
+  },
+  "source": [
+    "src/teyla/web/app.js:567",
+    "src/teyla/web/app.css:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "browser",
+    "p": {
+      "url": "127.0.0.1:8421/#spend",
+      "kids": [
+        {
+          "t": "use",
+          "c": "webSpend",
+          "p": {
+            "state": "empty"
+          }
+        }
+      ]
+    }
+  }
+}

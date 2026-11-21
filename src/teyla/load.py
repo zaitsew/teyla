@@ -1,6 +1,6 @@
 """`teyla load` — how loaded this machine is right now, a verdict, a recorder and a wait-for-a-slot.
 
-    teyla load [--json] [--record] [--quiet]     snapshot + verdict; exit 0 OK, 1 BUSY, 2 CRITICAL
+    teyla load [--json] [--record] [--quiet]     snapshot + verdict; exit 0 OK, 1 BUSY or HOLD, 2 CRITICAL
     teyla load --admit build|sim|lane            silent exit 0 when allowed; the refusal and exit 2 when not
     teyla load --wait --kind build|sim|lane      poll until a slot is free (exit 0) or the timeout (exit 3)
     teyla load --replay [--days N] [--day D]     the verdict and the admissions over the recorded days
@@ -117,6 +117,7 @@ import os
 import pathlib
 import re
 import shutil
+import signal
 import sys
 import time
 from typing import Callable
@@ -127,6 +128,7 @@ from .storage_procs import parse_etime, run_command
 GIB = 1024 ** 3
 KIB = 1024
 OK, BUSY, WORSENING, CRITICAL = "OK", "BUSY", "WORSENING", "CRITICAL"
+HOLD = "HOLD"                                   # shown only: the machine reads OK or BUSY, a hold after a bad sample still runs
 EXIT = {OK: 0, BUSY: 1, WORSENING: 1, CRITICAL: 2}
 BAD = (WORSENING, CRITICAL)                    # the levels that start a hold
 EXIT_TIMEOUT = 3
@@ -245,13 +247,27 @@ class Verdict:
 
     @property
     def exit_code(self) -> int:
-        return EXIT[self.level]
+        return EXIT.get(self.level, 1)      # HOLD (shown only) exits 1, like BUSY
 
     def line(self) -> str:
         return f"load: {self.level}" + (" — " + "; ".join(self.reasons) if self.reasons else "")
 
     def to_json(self) -> dict:
         return {"level": self.level, "reasons": list(self.reasons)}
+
+
+def with_hold(verdict: Verdict, trend: "Trend | None") -> Verdict:
+    """The verdict as shown to a person while a hold runs. After a CRITICAL or WORSENING sample the guard
+    refuses new simulators and builds for `hold_min` minutes even when the machine reads OK or BUSY now;
+    a first line of "load: OK" next to "hold: ... wait 3 more min" said two things. The level becomes
+    HOLD (exit 1, like BUSY), the reasons name the wait, and the machine's own reasons follow. A verdict
+    that is already CRITICAL or WORSENING is returned as it is. Never recorded: `load.tsv` keeps the
+    machine's level, which the hold itself reads."""
+    left = trend.hold_left_s() if trend is not None else None
+    if left is None or verdict.level in BAD:
+        return verdict
+    wait = f"builds and simulators wait {math.ceil(left / 60)} min (after {trend.held_level} {int(trend.held_ago_s // 60)} min ago)"
+    return Verdict(HOLD, [wait] + list(verdict.reasons), 0, list(verdict.worsening))
 
 
 # --- configuration -----------------------------------------------------------------------------
@@ -600,6 +616,22 @@ def classify(rows: list[Row]) -> Procs:
 # --- the snapshot --------------------------------------------------------------------------------
 
 Runner = Callable[..., "tuple[int, str]"]
+
+# Where macOS keeps the system tools the snapshot calls. A minimal PATH (cron, a hook, a clean shell) lacks
+# /usr/sbin, where `sysctl` lives, and RAM then reads as unknown.
+SYSTEM_DIRS = ("/usr/sbin", "/usr/bin", "/bin", "/sbin")
+
+
+def run_system(cmd: list[str], timeout: int = 60) -> tuple[int, str]:
+    """`run_command`, with a bare tool name (`ps`, `sysctl`, `vm_stat`) resolved to its absolute system path
+    when that file exists, so the answer does not depend on PATH."""
+    if cmd and "/" not in cmd[0]:
+        for d in SYSTEM_DIRS:
+            full = os.path.join(d, cmd[0])
+            if os.access(full, os.X_OK):
+                cmd = [full, *cmd[1:]]
+                break
+    return run_command(cmd, timeout)
 Footprints = Callable[[list], "dict[int, int]"]     # pids -> physical footprint bytes, for the pids it could read
 
 RUSAGE_INFO_V2 = 2
@@ -680,7 +712,7 @@ def disk_free() -> int | None:
         return None
 
 
-def snapshot(run: Runner = run_command, now: dt.datetime | None = None, vm: bool = True,
+def snapshot(run: Runner = run_system, now: dt.datetime | None = None, vm: bool = True,
              footprints: Footprints | None = None) -> Snapshot | None:
     """One `sysctl`, one `ps`, (`vm`) one `vm_stat`, and the physical footprint of every process (`footprints`,
     default `native_footprints`; RSS where it cannot be read). None when `ps` could not answer (the processes
@@ -706,7 +738,7 @@ def snapshot(run: Runner = run_command, now: dt.datetime | None = None, vm: bool
                     swapout_bytes=swapouts, pageout_bytes=pageouts, procs=classify(rows))
 
 
-def safe_snapshot(run: Runner = run_command, footprints: Footprints | None = None) -> Snapshot | None:
+def safe_snapshot(run: Runner = run_system, footprints: Footprints | None = None) -> Snapshot | None:
     """`snapshot`, with any failure of the guard's own code read as "unknown"."""
     try:
         return snapshot(run, footprints=footprints)
@@ -741,7 +773,7 @@ def _worsening(trend: "Trend | None", snap: Snapshot, conf: dict | None) -> list
     free = snap.disk_free_bytes
     if (trend.disk_free_ahead_gb is not None and free is not None and free >= crit_gb * GIB
             and trend.disk_free_ahead_gb < crit_gb and trend.disk_recent_gb is not None and trend.disk_recent_gb > RECENT_GROWTH_GB):
-        out.append(f"disk {gb(free)} free and falling: on this trend {_disk_ahead(trend.disk_free_ahead_gb)} in {trend.disk_ahead_min:g} min,"
+        out.append(f"disk {gb(free)} free and falling: on this trend {_disk_ahead(trend.disk_free_ahead_gb)} in {trend.disk_ahead_min:g} min at the current rate,"
                    f" under the {crit_gb:g} GB critical line")
     return out
 
@@ -1186,13 +1218,145 @@ def admit(kind: str, snap: Snapshot, conf: dict | None = None) -> tuple[bool, st
     return d.allowed, d.message
 
 
+# --- the wait queue: first come, first served ---------------------------------------------------------------
+
+QUEUE_DIR = "guard-queue"
+
+
+def queue_dir(kind: str) -> pathlib.Path:
+    return _home() / QUEUE_DIR / kind
+
+
+def _pid_alive(pid: int) -> bool:
+    """Signal 0 only checks that the process exists; nothing is sent."""
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True                                  # exists, but not ours (EPERM)
+    return True
+
+
+def take_ticket(kind: str, timeout_s: float, priority: bool = False, pid: int | None = None,
+                now: float | None = None, base: pathlib.Path | None = None) -> pathlib.Path | None:
+    """Join the line for `kind`: one small JSON file, created atomically (temp file + rename). None when the
+    file cannot be written: the waiter then races as it did before the queue."""
+    pid = os.getpid() if pid is None else pid
+    now = time.time() if now is None else now
+    d = pathlib.Path(base) if base else queue_dir(kind)
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        name = f"{int(now * 1000):015d}-{pid}-{os.urandom(3).hex()}.json"
+        tmp = d / f".{name}.tmp"
+        tmp.write_text(json.dumps({"pid": pid, "kind": kind, "ts": now, "priority": bool(priority),
+                                   "deadline": now + max(0.0, timeout_s)}))
+        os.replace(tmp, d / name)
+        return d / name
+    except OSError:
+        return None
+
+
+def drop_ticket(path: pathlib.Path | None) -> None:
+    if path is None:
+        return
+    try:
+        pathlib.Path(path).unlink()
+    except OSError:
+        pass
+
+
+def live_tickets(kind: str, now: float | None = None, alive: Callable[[int], bool] | None = None,
+                 base: pathlib.Path | None = None, max_age_s: float = 86400.0) -> list[tuple[pathlib.Path, dict]]:
+    """The tickets that count, in admission order: priority first, then arrival. A ticket whose process is dead,
+    whose own deadline has passed, or that is unreadable and old is ignored and removed."""
+    now = time.time() if now is None else now
+    alive = alive or _pid_alive
+    d = pathlib.Path(base) if base else queue_dir(kind)
+    out: list[tuple[pathlib.Path, dict]] = []
+    try:
+        names = sorted(n for n in os.listdir(d) if n.endswith(".json") and not n.startswith("."))
+    except OSError:
+        return out
+    for n in names:
+        p = d / n
+        try:
+            rec = json.loads(p.read_text())
+            pid, ts = int(rec["pid"]), float(rec["ts"])
+            deadline = float(rec.get("deadline", ts + max_age_s))
+        except (OSError, ValueError, KeyError, TypeError):
+            try:
+                if now - p.stat().st_mtime > 60:
+                    drop_ticket(p)
+            except OSError:
+                pass
+            continue
+        if now > deadline or not alive(pid):
+            drop_ticket(p)
+            continue
+        out.append((p, rec))
+    out.sort(key=lambda t: (0 if t[1].get("priority") else 1, float(t[1]["ts"]), t[0].name))
+    return out
+
+
+def queue_position(kind: str, ticket: pathlib.Path | None, now: float | None = None,
+                   alive: Callable[[int], bool] | None = None, base: pathlib.Path | None = None) -> int:
+    """How many live tickets are ahead; 0 = next in line (also with no ticket: a waiter that could not join is
+    never held back). A ticket that was swept because its own deadline passed is behind everyone: that waiter
+    must time out, never take a free slot ahead of an older live waiter."""
+    if ticket is None:
+        return 0
+    live = live_tickets(kind, now, alive, base)
+    for i, (p, _rec) in enumerate(live):
+        if p == ticket:
+            return i
+    return len(live)
+
+
+def _ordinal(n: int) -> str:
+    return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
+
+
+def position_text(kind: str, ahead: int) -> str:
+    return f"waiting for a {kind} slot: {_ordinal(ahead + 1)} in line ({ahead} ahead)"
+
+
+def queue_lengths(now: float | None = None, alive: Callable[[int], bool] | None = None) -> dict[str, int]:
+    return {k: n for k in KINDS if (n := len(live_tickets(k, now, alive)))}
+
+
+@contextlib.contextmanager
+def _term_as_exit():
+    """SIGTERM ends the wait through SystemExit, so the ticket is removed by `finally`."""
+    old = None
+    try:
+        old = signal.signal(signal.SIGTERM, lambda _s, _f: sys.exit(143))
+    except (ValueError, OSError):                    # not the main thread
+        pass
+    try:
+        yield
+    finally:
+        if old is not None:
+            try:
+                signal.signal(signal.SIGTERM, old)
+            except (ValueError, OSError):
+                pass
+
+
 def wait(kind: str, conf: dict | None = None, timeout_s: float | None = None, poll_s: float = 15,
          clock: Callable[[], float] | None = None, sleeper: Callable[[float], None] | None = None,
          snap_fn: Callable[[], Snapshot | None] | None = None, out=None, err=None,
-         trend_fn: Callable[[Snapshot], Trend | None] | None = None, cwd: str | None = None) -> int:
+         trend_fn: Callable[[Snapshot], Trend | None] | None = None, cwd: str | None = None,
+         priority: bool = False, wall: Callable[[], float] | None = None,
+         alive: Callable[[int], bool] | None = None, queue: bool = True) -> int:
     """Poll `snap_fn` + `admit` until allowed (0) or `timeout_s` (default `guard.wait_timeout_s`) runs
     out (3, the last refusal printed to `out`). One progress line per minute at most, to `err`.
-    A snapshot that fails lets the work through (0)."""
+    A snapshot that fails lets the work through (0).
+
+    Waiters take a ticket (`~/.teyla/guard-queue/<kind>/`) and only the oldest live ticket is admitted: priority
+    tickets first, then arrival order. A waiter from an older Teyla takes no ticket and still races."""
     out = out or sys.stdout
     err = err or sys.stderr
     clock = clock or time.monotonic
@@ -1200,6 +1364,17 @@ def wait(kind: str, conf: dict | None = None, timeout_s: float | None = None, po
     snap_fn = snap_fn or safe_snapshot
     trend_fn = trend_fn or (lambda s: current_trend(s, conf))
     timeout = _num(conf, "wait_timeout_s") if timeout_s is None else timeout_s
+    wall = wall or time.time
+    ticket = take_ticket(kind, timeout, priority, now=wall()) if queue else None
+    try:
+        with _term_as_exit():
+            return _wait_loop(kind, conf, timeout, poll_s, clock, sleeper, snap_fn, out, err, trend_fn, cwd,
+                              ticket, wall, alive)
+    finally:
+        drop_ticket(ticket)
+
+
+def _wait_loop(kind, conf, timeout, poll_s, clock, sleeper, snap_fn, out, err, trend_fn, cwd, ticket, wall, alive) -> int:
     start = clock()
     last_progress: float | None = None
     last_bad: tuple[str, float] | None = None      # (level, time) of the last bad verdict this wait logged
@@ -1212,7 +1387,14 @@ def wait(kind: str, conf: dict | None = None, timeout_s: float | None = None, po
         if snap is None:
             log_decision(kind, "unknown", True, "snapshot failed: let through", via="wait")
             return 0
-        d = decide_leased(kind, snap, conf, trend_fn(snap), cwd=cwd)
+        ahead = queue_position(kind, ticket, wall(), alive)
+        if ahead == 0:
+            d = decide_leased(kind, snap, conf, trend_fn(snap), cwd=cwd)
+        else:                                        # an older waiter goes first: report, never admit
+            d = decide(kind, snap, conf, trend_fn(snap))
+            if d.allowed:
+                d = Decision(False, f"teyla guard: {ahead} older waiter(s) for a {kind} slot go first", d.level,
+                             f"{ahead} ahead in the queue")
         now = clock()
         elapsed = now - start
         if d.allowed:
@@ -1230,7 +1412,8 @@ def wait(kind: str, conf: dict | None = None, timeout_s: float | None = None, po
         if last_progress is None or now - last_progress >= PROGRESS_EVERY_S:
             last_progress = now
             first = d.message.splitlines()[0].removeprefix("teyla guard: ")
-            print(f"teyla load: waiting ({int(elapsed)}s of {int(timeout)}s) — {first}", file=err)
+            where = f"{position_text(kind, ahead)} " if ticket is not None else "waiting "
+            print(f"teyla load: {where}({int(elapsed)}s of {int(timeout)}s) — {first}", file=err)
         sleeper(max(0.0, min(poll_s, timeout - elapsed)))
 
 
@@ -1673,7 +1856,7 @@ def trend_lines(trend: Trend | None, conf: dict | None = None) -> list[str]:
     if trend.swap_gb_30m is not None:
         bits.append(f"swap {trend.swap_gb_30m:+.1f} GB per 30 min")
     if trend.disk_free_ahead_gb is not None:
-        bits.append(f"disk {_disk_ahead(trend.disk_free_ahead_gb)} in {trend.disk_ahead_min:g} min")
+        bits.append(f"disk forecast: {_disk_ahead(trend.disk_free_ahead_gb)} in {trend.disk_ahead_min:g} min at the current rate")
     if trend.swapout_mb_s is not None:
         bits.append(f"swap-out {trend.swapout_mb_s:.1f} MB/s")
     out = []
@@ -1692,18 +1875,17 @@ def render(snap: Snapshot, verdict: Verdict, trend: Trend | None = None, conf: d
            bypassed: list | None = None) -> str:
     p = snap.procs
     lines = [verdict.line()]
-    mem = [f"{gb(snap.ram_bytes)} RAM"]
+    mem = [f"{gb(snap.ram_bytes)} RAM" if snap.ram_bytes else "RAM unknown (sysctl hw.memsize gave no answer)"]
     if snap.swap_used_bytes is not None:
         pct = _pct(snap.swap_used_bytes, snap.ram_bytes)
-        mem.append(f"swap {gb(snap.swap_used_bytes)}" + (f" of {gb(snap.swap_total_bytes)}" if snap.swap_total_bytes else "")
-                   + (f" ({pct:.0f}% of RAM)" if pct is not None else ""))
+        mem.append(f"swap {gb(snap.swap_used_bytes)}" + (f" ({pct:.0f}% of RAM)" if pct is not None else ""))
     if snap.compressor_bytes is not None:
         mem.append(f"compressor {gb(snap.compressor_bytes)}")
     if snap.pressure is not None:
         mem.append("pressure " + {1: "normal", 2: "warn", 4: "critical"}.get(snap.pressure, str(snap.pressure)))
     lines.append("memory: " + " · ".join(mem))
     if snap.disk_free_bytes is not None:
-        lines.append(f"disk: {gb(snap.disk_free_bytes)} free")
+        lines.append(f"disk: {gb(snap.disk_free_bytes)} free now")
     lines += trend_lines(trend, conf)
     if snap.load1 is not None:
         lines.append(f"cpu: load {snap.load1:.1f} / {snap.load5:.1f} / {snap.load15:.1f} on {snap.ncpu or '?'} cores")
@@ -1754,7 +1936,7 @@ def volume_refusal(kind: str, cfg: dict | None = None) -> str:
     return msg
 
 
-def cmd_load(args, run: Runner = run_command) -> int:
+def cmd_load(args, run: Runner = run_system) -> int:
     conf = guard_conf()
     if args.replay:
         if args.day:
@@ -1792,7 +1974,7 @@ def cmd_load(args, run: Runner = run_command) -> int:
     if args.wait:
         if not enabled(conf):
             return 0
-        return wait(args.kind, conf, args.timeout, cwd=_guard_cwd(args.cwd))
+        return wait(args.kind, conf, args.timeout, cwd=_guard_cwd(args.cwd), priority=getattr(args, "priority", False))
     snap = safe_snapshot(run)
     if snap is None:
         print("teyla load: could not read the process table (ps failed); load unknown", file=sys.stderr)
@@ -1805,22 +1987,29 @@ def cmd_load(args, run: Runner = run_command) -> int:
         except OSError as e:
             print(f"teyla load: could not record: {e}", file=sys.stderr)
     bypassed, _ = report_bypassed(snap, verdict.level, log=False)
+    shown = with_hold(verdict, trend)
     if args.json:
-        print(json.dumps({"snapshot": snap.to_json(), "verdict": verdict.to_json(),
+        vj = verdict.to_json()      # `level` stays the machine's own level; `hold` says whether admission is held
+        left = trend.hold_left_s() if trend is not None else None
+        vj["hold"] = None if left is None else {"level": trend.held_level, "left_min": math.ceil(left / 60)}
+        print(json.dumps({"snapshot": snap.to_json(), "verdict": vj,
                           "trend": trend.to_json() if trend else None, "bypassed": bypassed}, indent=1))
         return 0
     if args.quiet:
         return 0
-    print(render(snap, verdict, trend, conf, bypassed))
+    print(render(snap, shown, trend, conf, bypassed))
     recent = decision_summary()
     if recent:
         print(recent)
-    return verdict.exit_code
+    waiting = queue_lengths()
+    if waiting:
+        print("queue: " + ", ".join(f"{k} {n} waiting" for k, n in waiting.items()))
+    return shown.exit_code
 
 
 def register(sp):
     q = sp.add_parser("load", help="machine load: snapshot, verdict, recorder, admission check and wait-for-a-slot",
-                      description=__doc__.split("\n\n")[0] + "\n\nExit codes: 0 OK, 1 BUSY, 2 CRITICAL (--admit: 2 refused; --wait: 3 timeout).")
+                      description=__doc__.split("\n\n")[0] + "\n\nExit codes: 0 OK, 1 BUSY, WORSENING or HOLD (a hold after a bad sample is still running), 2 CRITICAL (--admit: 2 refused; --wait: 3 timeout).")
     q.set_defaults(fn=cmd_load)
     q.add_argument("--json", action="store_true", help="the snapshot and the verdict as JSON (exit 0)")
     q.add_argument("--record", action="store_true", help="append one line to ~/.teyla/load.tsv")
@@ -1828,6 +2017,7 @@ def register(sp):
     q.add_argument("--admit", choices=KINDS, metavar="KIND", help="build|sim|lane: silent exit 0 when allowed; the refusal and exit 2 when not")
     q.add_argument("--wait", action="store_true", help="poll until --kind is allowed (exit 0) or the timeout (exit 3)")
     q.add_argument("--kind", choices=KINDS, default="build", help="what --wait waits to start (default build)")
+    q.add_argument("--priority", action="store_true", help="--wait: go ahead of normal waiters (a release upload or archive); among priority waiters, arrival order")
     q.add_argument("--replay", action="store_true", help="run the verdict and admission over ~/.teyla/load.tsv: per day, the OK/BUSY/CRITICAL counts and how many samples would admit a sim or a build")
     q.add_argument("--days", type=float, default=7, metavar="N", help="--replay: how many days back (default 7)")
     q.add_argument("--day", metavar="YYYY-MM-DD", help="--replay: one line per change of state on that day, instead of the table")

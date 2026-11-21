@@ -1,0 +1,39 @@
+{
+  "id": "iphone.settings-forget",
+  "title": "Settings · forget this Mac",
+  "area": "iphone",
+  "presentation": "overlay",
+  "source": [
+    "apps/ios/Teyla/UI/SettingsView.swift:1"
+  ],
+  "root": {
+    "t": "v",
+    "name": "Dimmed",
+    "w": "fill",
+    "h": "fill",
+    "fill": "#000000@0.35",
+    "justify": "center",
+    "align": "center",
+    "kids": [
+      {
+        "t": "use",
+        "c": "iosAlert",
+        "p": {
+          "title": "Forget this Mac?",
+          "message": "Teyla deletes the shared key and the folder. Anything not yet delivered is dropped from this iPhone.",
+          "buttons": [
+            {
+              "label": "Cancel",
+              "bold": true,
+              "link": "close"
+            },
+            {
+              "label": "Forget",
+              "tone": "danger"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
