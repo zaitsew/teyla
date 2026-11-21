@@ -201,6 +201,32 @@ def test_android_overlay_class_in_a_dex_fails(tmp_path, capsys):
         assert code == 1 and member in out
 
 
+def test_android_channel_key_and_url_names_in_a_dex_fail(tmp_path, capsys):
+    for marker in gate.MARKERS_ANDROID_CHANNEL:
+        dex = b"dex\n035 Lcom/example/Main;" + marker + b"\x00"
+        for name, member in (("a.apk", "classes.dex"), ("a.aab", "base/dex/classes2.dex")):
+            code, out, _ = run(make_android(tmp_path / (marker.decode().strip("/").replace("/", "_") + name), dex=dex, member=member),
+                               capsys=capsys)
+            assert code == 1, marker
+            assert "no review channel key or URL in any dex file" in out and member in out
+            assert "no review overlay class in any dex file" in out     # the first check is not hidden by the second
+
+
+def test_android_channel_check_names_the_marker_and_never_a_value(tmp_path, capsys):
+    secret = b"0123456789abcdef-the-actual-key-value"
+    dex = b"dex\n035 TEYLA_REVIEW_KEY\x00" + secret + b"\x00"
+    code, out, _ = run(make_android(tmp_path / "k.apk", dex=dex), capsys=capsys)
+    assert code == 1 and "TEYLA_REVIEW_KEY" in out and secret.decode() not in out
+
+
+def test_android_channel_markers_outside_a_dex_are_not_a_finding(tmp_path, capsys):
+    p = tmp_path / "n.apk"
+    with zipfile.ZipFile(p, "w") as z:
+        z.writestr("classes.dex", b"dex\n035 Lcom/example/Main;")
+        z.writestr("assets/readme.txt", b"TEYLA_REVIEW_KEY TEYLA_REVIEW_URL /v1/captures/")
+    assert run(p, capsys=capsys)[0] == 0
+
+
 def test_an_apk_without_dex_cannot_be_read(tmp_path, capsys):
     p = tmp_path / "x.apk"
     with zipfile.ZipFile(p, "w") as z:

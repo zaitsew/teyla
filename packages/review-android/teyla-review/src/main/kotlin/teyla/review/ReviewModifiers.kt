@@ -33,8 +33,9 @@ enum class ReviewRole(val wire: String) {
 /**
  * Hides this composable from every capture: its bounds, as of the moment the picture is taken, plus a 2 dp
  * margin, are painted black in the PNG before the form shows it, hashes it, saves it or sends it. Use it on
- * other people's names and messages, and on health values. Compose cannot tell a password field from any
- * other text field, so a password field needs this modifier too: nothing is masked automatically.
+ * other people's names and messages, and on health values. Password fields (a password input type, a password
+ * autofill hint, Compose `password` semantics) are masked without it; a card or one-time-code field in Compose is not
+ * found, so it needs this modifier.
  */
 fun Modifier.reviewPrivate(): Modifier = this then BoundsElement(Kind.Private, "", ReviewRole.Other, emptyList())
 

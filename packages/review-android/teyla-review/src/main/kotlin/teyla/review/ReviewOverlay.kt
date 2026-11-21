@@ -162,7 +162,7 @@ internal object ReviewOverlay {
         if (w <= 0 || h <= 0) { fail(strings.pictureFailed); return }
         val density = activity.resources.displayMetrics.density.toDouble().coerceAtLeast(0.5)
         val deadline = SystemClock.uptimeMillis() + STILL_TIMEOUT_MS
-        val read = { ReviewState.registry.snapshot(w / density, h / density, density) }
+        val read = { ReviewState.registry.snapshot(w / density, h / density, density) { SensitiveViews.frames(decor) } }
 
         fun copy(snapshot: Snapshot, again: () -> Unit) {
             val bitmap = try { Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888) } catch (e: OutOfMemoryError) { fail(strings.pictureFailed); return }

@@ -115,8 +115,26 @@ enum AppProbe {
             name: (info["CFBundleDisplayName"] as? String) ?? (info["CFBundleName"] as? String),
             version: (info["CFBundleShortVersionString"] as? String) ?? "0",
             build: (info["CFBundleVersion"] as? String) ?? "0",
-            commit: commit, product: product(configured: configuredProduct, plist: info[ChannelConfig.productInfoKey]),
+            commit: commit,
+            product: product(configured: configuredProduct, plist: info[ChannelConfig.productInfoKey])
+                ?? productFromBundleID(bundle.bundleIdentifier ?? ""),
             configuration: channel)
+    }
+
+    /// The slug used when the product set none: the last part of the bundle id, lower case, anything else in it
+    /// turned into a hyphen (`com.example.SampleApp` gives `sampleapp`). Nil when that is not a slug, and for the
+    /// placeholder `unknown`. `docs/REVIEW.md`: "Absent: the last part of `app.bundle_id`".
+    static func productFromBundleID(_ bundleId: String) -> String? {
+        guard bundleId != "unknown", let last = bundleId.split(separator: ".").last else { return nil }
+        var slug = ""
+        for scalar in last.lowercased().unicodeScalars {
+            let ok = (scalar.value >= 97 && scalar.value <= 122) || (scalar.value >= 48 && scalar.value <= 57)
+            slug.append(ok ? Character(scalar) : "-")
+        }
+        while slug.hasSuffix("-") { slug.removeLast() }
+        slug = String(slug.prefix(40))
+        while slug.hasSuffix("-") { slug.removeLast() }
+        return isSlug(slug) ? slug : nil
     }
 
     /// The slug `app.product` carries: the configuration value, else the Info.plist key

@@ -4,6 +4,8 @@ A write-only drop box for test-build feedback captures. Every product and platfo
 
 A capture can show another person's data, so nothing can be read, listed or deleted over HTTP. Design and caps: [docs/REVIEW.md](../../docs/REVIEW.md), "The shared channel".
 
+The service also scrubs: before it stores a `capture.json` it applies the same rules the test builds apply on the device (e-mail addresses, phone numbers, card numbers, IBANs, tokens, API keys, JWTs, secret URL parameters; an accessibility label is cut to 200 characters). A capture the rules leave alone is stored byte for byte. `test-vectors/scrub.json` holds the shared cases; see [docs/REVIEW.md](../../docs/REVIEW.md), "What is scrubbed". The Dockerfile copies only `server.py`: the vectors are for tests.
+
 ## Install
 
 You need the shared server from `templates/platform` (Docker, Caddy, the external `apps` network) and SSH access as a user whose uid is 1000: the container runs as uid 1000, and the Mac reads and deletes what it writes.

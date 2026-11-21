@@ -10,7 +10,9 @@ It reads files and prints one line per check. It never prints a key's value and 
                              and its executable in Contents/MacOS; both layouts are read
     .pkg                     a Mac export: expanded with `pkgutil --expand-full` into a temporary folder (macOS only),
                              then every .app in it gets the same checks
-    .aab, .apk               no dex file contains the bytes of the overlay class name
+    .aab, .apk               no dex file contains the bytes of the overlay class name, the BuildConfig field names
+                             the Android package documents for the channel key and URL (TEYLA_REVIEW_KEY,
+                             TEYLA_REVIEW_URL), or the channel client's request path
     a directory              no file contains the web marker
 
 Exit 0: clean. Exit 1: something found. Exit 2: the path cannot be read, or its type is unknown.
@@ -35,6 +37,10 @@ MARKER_SWIFT = b"TEYLA_REVIEW_IOS_ACTIVE"
 MARKER_WEB = b"TEYLA_REVIEW_WEB_ACTIVE"
 # Android: the internal name of the overlay class, as a dex string table holds it.
 MARKER_ANDROID = b"teyla/review/ReviewOverlay"
+# Android: the BuildConfig fields that carry the channel URL and the write-only key (packages/review-android/README.md),
+# and the path the channel client PUTs to. The key is a secret of a test build: a store build has none of the three.
+# The check reads names, never a value: it cannot tell a key stored under another name, and says so in docs/REVIEW.md.
+MARKERS_ANDROID_CHANNEL = (b"TEYLA_REVIEW_KEY", b"TEYLA_REVIEW_URL", b"/v1/captures/")
 
 KEY_ENABLED = "TeylaReviewEnabled"
 KEY_CHANNEL = "TeylaReviewChannelKey"
@@ -271,8 +277,13 @@ def check_android(path: pathlib.Path) -> list[Check]:
         if not dex:
             raise GateError(f"{path.name} holds no dex file")
         hits = [n for n in dex if _zip_member_contains(z, n, MARKER_ANDROID)]
+        channel = [(m.decode(), n) for n in dex for m in MARKERS_ANDROID_CHANNEL if _zip_member_contains(z, n, m)]
+    found = sorted({m for m, _n in channel})
     return [Check("no review overlay class in any dex file", not hits,
-                  "" if not hits else "overlay class found in " + ", ".join(hits))]
+                  "" if not hits else "overlay class found in " + ", ".join(hits)),
+            Check("no review channel key or URL in any dex file", not channel,
+                  "" if not channel else "channel marker " + ", ".join(found) + " found in "
+                  + ", ".join(sorted({n for _m, n in channel})) + " (value not shown)")]
 
 
 # ---- a directory (web dist) -------------------------------------------------------------------------

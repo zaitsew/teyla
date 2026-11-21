@@ -30,6 +30,7 @@ defined only in Debug and TestFlight); an App Store configuration defines nothin
 
 Nothing leaves the device unless both channel keys are set or you set `$0.deliver`. The first Send shows a notice (what is sent, who
 gets it, why, how long); the words are `ReviewStrings.notice*`. Mark views a tester must not have to send with `.reviewPrivate()`;
+Secure text fields (`SecureField`, `isSecureTextEntry`) and password, one-time-code and card fields are masked on their own. Every text field of a capture is scrubbed of e-mail addresses, phone numbers, card numbers, IBANs, tokens, API keys, JWTs and secret URL parameters before it is written (`docs/REVIEW.md`, "What is scrubbed"). Without `$0.product` the package uses the last part of the bundle id as `app.product`.
 `$0.requiresHealthConsent = true` adds a checkbox before Send.
 
 ## Usage capture (test builds)
