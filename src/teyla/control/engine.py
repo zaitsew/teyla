@@ -45,6 +45,33 @@ class RunRefused(RuntimeError):
 # --- resolution -------------------------------------------------------------------
 
 
+CONTROL_PLANE_DEFINITION = ("A control-plane routine is a `[[routine]]` in teyla.toml with a `step` table: Teyla runs it "
+                            "itself (draft, gate, act, receipt) instead of only reporting on a job scheduled elsewhere.")
+
+
+def not_control_plane_message(product: str, name: str, manifest_path) -> str:
+    """Why `<product>:<name>` cannot run: the name is absent, or it is a plain (legacy) routine without a `step`."""
+    control = [x.name for x in load_manifest(manifest_path)]
+    legacy = [r.get("name") for r in _plain_routines(manifest_path)]
+    if name in legacy:
+        why = f"{name!r} in product {product!r} is a plain routine (kind/label/every), not a control-plane routine"
+    else:
+        why = f"product {product!r} has no control-plane routine {name!r}"
+    declare = ("To make it one, add a `step = { kind = \"command\", run = \"...\" }` key to its `[[routine]]` table "
+               "in teyla.toml (`gate`, `idempotency` and `trigger` complete it; templates/repo/teyla.toml has a worked example).")
+    exist = ", ".join(control) if control else "(none)"
+    return f"{why}. {CONTROL_PLANE_DEFINITION} {declare} Control-plane routines in {product!r}: {exist}"
+
+
+def _plain_routines(manifest_path) -> list[dict]:
+    import tomllib
+    try:
+        data = tomllib.loads(pathlib.Path(manifest_path).read_text())
+    except (OSError, tomllib.TOMLDecodeError):
+        return []
+    return [r for r in data.get("routine") or [] if isinstance(r, dict) and not isinstance(r.get("step"), dict)]
+
+
 def resolve(ref: str, *, repo=None) -> Routine:
     """`"<product>:<routine>"` -> the Routine, by searching the configured repo roots
     for a `teyla.toml` whose `[product].name` matches. `repo` short-circuits the
@@ -61,8 +88,7 @@ def resolve(ref: str, *, repo=None) -> Routine:
         for r in load_manifest(man):
             if r.name == name:
                 return r
-        known = ", ".join(x.name for x in load_manifest(man)) or "(none)"
-        raise RunRefused(f"product {product!r} has no control-plane routine {name!r}. Declared: {known}")
+        raise RunRefused(not_control_plane_message(product, name, man))
     roots = ", ".join(str(p) for p in S.repo_roots())
     raise RunRefused(f"no product named {product!r} found under {roots}. Looked at: {', '.join(tried) or '(nothing)'}")
 

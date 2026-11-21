@@ -25,7 +25,7 @@ Each hit has a kind:
 
 Exceptions, so localization is not noise. Matching files are not read at all:
 
-    defaults      *.lproj/**  *.xcstrings  **/locales/**  **/i18n/**  **/l10n/**
+    defaults      *.lproj/**  *.xcstrings  **/locales/**  **/i18n/**  **/l10n/**  **/i18n.*  **/locales.*  **/strings.{ts,js}
                   **/translations/**  *.po  *.strings  **/Localizable*  **/messages/*.json
                   **/strings/*.json  and Android's **/res/values-*/{strings,plurals,arrays}.xml
     .teyla/lang-allow   the per-repo list, committed in the repo: one glob per line, `#` comments
@@ -98,6 +98,8 @@ DEFAULT_ALLOW = (
     # Android resource qualifiers (values-ru, values-pt-rBR...) and string-catalog directories
     "**/res/values-*/strings.xml", "**/res/values-*/plurals.xml", "**/res/values-*/arrays.xml",
     "**/strings/*.json",
+    # a single file that holds UI copy: i18n.ts, locales.js, strings.ts
+    "**/i18n.*", "**/locales.*", "**/strings.ts", "**/strings.js", "**/strings.tsx", "**/strings.jsx",
 )
 ALLOW_FILE = ".teyla/lang-allow"
 
@@ -753,7 +755,7 @@ def cmd_lang(args) -> int:
 HELP_EPILOG = """\
 Exempt files (localization is product content, not a finding), matched on the repo-relative path:
   built in    *.lproj/**  *.xcstrings  *.po  *.strings  **/Localizable*  **/locales/**  **/i18n/**
-              **/l10n/**  **/translations/**  **/messages/*.json  **/strings/*.json
+              **/i18n.*  **/locales.*  **/strings.{ts,js}  **/l10n/**  **/translations/**  **/messages/*.json  **/strings/*.json
               **/res/values-*/{strings,plurals,arrays}.xml   (Android resources)
   one repo    .teyla/lang-allow in that repo: one glob per line, '#' comments
   all repos   `teyla config set lang.allow=GLOB,GLOB`  ([lang] allow in ~/.teyla/config.toml)

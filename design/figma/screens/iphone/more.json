@@ -1,0 +1,80 @@
+{
+  "id": "iphone.more",
+  "title": "More",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/MoreView.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {
+        "decisions": 6
+      },
+      "title": "More",
+      "tab": "more",
+      "kids": [
+        {
+          "t": "use",
+          "c": "iosGroup",
+          "p": {
+            "kids": [
+              {
+                "t": "use",
+                "c": "iosRow",
+                "p": {
+                  "icon": "creditcard",
+                  "title": "Money",
+                  "value": "$412 a month",
+                  "chevron": true
+                }
+              },
+              {
+                "t": "use",
+                "c": "iosRow",
+                "p": {
+                  "icon": "gauge.with.dots.needle.67percent",
+                  "title": "Operations",
+                  "value": "118 GB free",
+                  "chevron": true
+                }
+              },
+              {
+                "t": "use",
+                "c": "iosRow",
+                "p": {
+                  "icon": "book",
+                  "title": "Playbook",
+                  "value": "14 rules",
+                  "chevron": true
+                }
+              },
+              {
+                "t": "use",
+                "c": "iosRow",
+                "p": {
+                  "icon": "gearshape",
+                  "title": "Settings",
+                  "value": "Paired",
+                  "chevron": true,
+                  "link": {
+                    "to": "iphone.settings",
+                    "as": "push"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

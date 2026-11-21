@@ -507,6 +507,7 @@ def test_status_shows_rows_alert_and_state(m, clock, capsys):
     m.sysctl = CRIT_SYSCTL
     tick(m)
     text = "\n".join(guard.status_lines(now=clock.t + 30))
+    assert "swap 11.5 GB (48% of RAM)" in text and "/24.0 GB" not in text      # same swap format as `teyla load`
     assert "CRITICAL" in text and "alert: " in text and "machine CRITICAL since 20:21" in text
     assert "state: CRITICAL since 20:21, 0/3 ticks below CRITICAL" in text and "agent=False" in text
     assert cli.main(["guard", "status"]) in (0, None)

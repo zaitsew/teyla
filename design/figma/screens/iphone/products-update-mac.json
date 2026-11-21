@@ -1,0 +1,39 @@
+{
+  "id": "iphone.products-update-mac",
+  "title": "Products · update Teyla on your Mac",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/PortfolioView.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {
+        "decisions": 6
+      },
+      "title": "All products",
+      "trailing": "New task",
+      "tab": "products",
+      "gap": 16,
+      "kids": [
+        {
+          "t": "use",
+          "c": "iosEmpty",
+          "p": {
+            "icon": "arrow.triangle.2.circlepath",
+            "title": "Update Teyla on your Mac",
+            "detail": "Update Teyla on your Mac to see the portfolio."
+          }
+        }
+      ]
+    }
+  }
+}

@@ -243,7 +243,7 @@ the critic's PASS. Writing a usable `undo.md`.
   `~/.teyla/active-runs/`: while any run is in flight, a session with no grants is
   refused. The cost is that an unrelated session started by hand during a run is
   refused too, and the marker is only as reliable as the pid in it (a crashed run's
-  marker is pruned when its process is gone). A harness that does not run the
+  marker is pruned when its process is gone; an empty or unreadable marker older than 10 minutes is removed too, and the refusal names the file). The hook runs teyla's own python, found from `TEYLA_PYTHON` or the `teyla` executable; with no teyla at all it allows the call and prints one line. A harness that does not run the
   PreToolUse hook at all is outside this entirely.
 * **`max_output_tokens`** is checked after the fact and flagged; it does not stop
   generation.

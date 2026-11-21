@@ -1,0 +1,176 @@
+{
+  "id": "cli.doctor",
+  "title": "`teyla doctor`, with problems",
+  "area": "cli",
+  "presentation": "push",
+  "device": {
+    "w": 860,
+    "h": 442
+  },
+  "source": [
+    "src/teyla/doctor.py:648",
+    "src/teyla/doctor.py:600"
+  ],
+  "root": {
+    "t": "use",
+    "c": "terminal",
+    "p": {
+      "title": "teyla — zsh — 110×34",
+      "lines": [
+        {
+          "cmd": "teyla doctor"
+        },
+        [
+          {
+            "v": "teyla 0.58.1",
+            "bold": true
+          }
+        ],
+        [
+          {
+            "v": "Setup",
+            "bold": true
+          }
+        ],
+        [
+          {
+            "v": "OK   ",
+            "role": "saving"
+          },
+          "version                ",
+          "0.58.1 (uv tool) is current; auto-update is on"
+        ],
+        [
+          {
+            "v": "OK   ",
+            "role": "saving"
+          },
+          "config                 ",
+          "~/.teyla/config.toml: code_root=~/repos ops_root=~/ops"
+        ],
+        [
+          {
+            "v": "OK   ",
+            "role": "saving"
+          },
+          "network                ",
+          "github.com reachable for <owner>/teyla"
+        ],
+        [
+          {
+            "v": "OK   ",
+            "role": "saving"
+          },
+          "harness:claude         ",
+          "~/.claude: 31 session(s) in the last 7 days"
+        ],
+        [
+          {
+            "v": "OK   ",
+            "role": "saving"
+          },
+          "harness:codex          ",
+          "~/.codex: 9 session(s) in the last 7 days"
+        ],
+        [
+          {
+            "v": "INFO ",
+            "role": "text-secondary"
+          },
+          "harness:grok           ",
+          "absent on this machine"
+        ],
+        [
+          {
+            "v": "OK   ",
+            "role": "saving"
+          },
+          "policy:file            ",
+          "~/.agents/POLICY.md is present and linked"
+        ],
+        [
+          {
+            "v": "WARN ",
+            "role": "needs-you"
+          },
+          "hooks:autocompact      ",
+          "the compact window is at its default; long sessions re-read their whole context"
+        ],
+        [
+          "     ",
+          "                       ",
+          "→ ",
+          {
+            "v": "teyla apply O1",
+            "role": "primary"
+          }
+        ],
+        [
+          {
+            "v": "WARN ",
+            "role": "needs-you"
+          },
+          "policy:ack             ",
+          "global CLAUDE.md changed since it was acknowledged (advice A10 will fire)"
+        ],
+        [
+          "     ",
+          "                       ",
+          "→ ",
+          {
+            "v": "teyla policy ack",
+            "role": "primary"
+          }
+        ],
+        [
+          {
+            "v": "FIX  ",
+            "role": "danger"
+          },
+          "harness:codex          ",
+          "hooks missing: stop, session-start"
+        ],
+        [
+          "     ",
+          "                       ",
+          "→ ",
+          {
+            "v": "teyla harness sync",
+            "role": "primary"
+          }
+        ],
+        [
+          {
+            "v": "Machine",
+            "bold": true
+          }
+        ],
+        [
+          {
+            "v": "INFO ",
+            "role": "text-secondary"
+          },
+          "machine:load           ",
+          "OK"
+        ],
+        [
+          {
+            "v": "INFO ",
+            "role": "text-secondary"
+          },
+          "machine:crash          ",
+          "no kernel panic in the last 7 days"
+        ],
+        [
+          {
+            "v": "OK   ",
+            "role": "saving"
+          },
+          "storage:disk           ",
+          "114 GB free"
+        ],
+        "teyla: 1 fix(es), 2 warning(s), disk 114 GB free — run `teyla doctor`"
+      ]
+    }
+  }
+}

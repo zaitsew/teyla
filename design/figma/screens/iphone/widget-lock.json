@@ -1,0 +1,20 @@
+{
+  "id": "iphone.widget-lock",
+  "title": "Widget · lock screen",
+  "area": "iphone",
+  "presentation": "overlay",
+  "device": {
+    "w": 172,
+    "h": 76
+  },
+  "source": [
+    "apps/ios/TeylaWidget/ActivityWidget.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosWidget",
+    "p": {
+      "family": "lock"
+    }
+  }
+}
