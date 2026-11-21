@@ -55,7 +55,8 @@ GH_TEXT_VERBS = {
 GIT_TEXT_VERBS = {"commit", "tag", "merge"}
 GH_TEXT_LONG = {"title", "body", "notes", "message", "comment", "description", "desc", "subject"}
 GH_FILE_LONG = {"body-file", "notes-file", "add"}       # `gh gist edit --add FILE` publishes FILE
-API_TEXT_KEYS = {"body", "title", "message", "description", "text", "note", "content"}
+API_TEXT_KEYS = {"body", "title", "message", "description", "text", "note", "content",
+                 "commit_title", "commit_message"}      # the title and message of a merge (`pulls/N/merge`, `repos/O/R/merges`)
 
 # Credential paths. A pattern must start a path segment. HOME ones count unless the path is inside the repo
 # (a repo's own `.codex/config.toml` is a fixture, not a credential); the private-terms list counts anywhere.
@@ -275,6 +276,10 @@ class Lex:
                         if s[self.i + 1] != "\n":
                             part(s[self.i + 1], True)
                         self.i += 2
+                    elif s.startswith("$((", self.i) and self.depth < 8 and self._is_arith(self.i):
+                        start = self.i
+                        self._arith(cur)
+                        part(s[start:self.i])
                     elif d == "$" and s[self.i + 1:self.i + 2] == "(" and self.depth < 8:
                         start = self.i
                         self.i += 2
@@ -289,6 +294,11 @@ class Lex:
                         part(d)
                         self.i += 1
                 self.i += 1
+                continue
+            if s.startswith("$((", self.i) and self.depth < 8 and self._is_arith(self.i):
+                start = self.i
+                self._arith(cur)
+                part(s[start:self.i])
                 continue
             if c == "$" and s[self.i + 1:self.i + 2] == "(" and self.depth < 8:
                 start = self.i
@@ -397,6 +407,50 @@ class Lex:
             part(c)
             self.i += 1
         flush()
+
+    def _is_arith(self, i: int) -> bool:
+        """`$((` opens an arithmetic expansion when the first `)` that closes the inner parentheses is
+        directly followed by another `)`; otherwise it is a command substitution that starts with a
+        subshell, `$( (cmd) )`."""
+        s, depth = self.s, 0
+        for j in range(i + 3, len(s)):
+            if s[j] == "(":
+                depth += 1
+            elif s[j] == ")":
+                if depth == 0:
+                    return s[j + 1:j + 2] == ")"
+                depth -= 1
+        return False
+
+    def _arith(self, cur: Cmd) -> None:
+        """Lex `$(( ... ))` as one word. A `$( )` or backtick inside it is a command of its own and is
+        analysed like any other; the arithmetic itself runs nothing."""
+        s, n = self.s, len(self.s)
+        self.i += 3
+        depth = 0
+        while self.i < n:
+            d = s[self.i]
+            if s.startswith("$((", self.i) and self._is_arith(self.i):
+                self._arith(cur)
+                continue
+            if d == "$" and s[self.i + 1:self.i + 2] == "(":
+                self.i += 2
+                self._sub(cur, ")")
+                continue
+            if d == "`":
+                j = self._backtick_end(self.i)
+                self._backtick(cur, self.i, j)
+                self.i = j + 1
+                continue
+            if d == "(":
+                depth += 1
+            elif d == ")":
+                if depth > 0:
+                    depth -= 1
+                else:
+                    self.i += 2 if s[self.i + 1:self.i + 2] == ")" else 1
+                    return
+            self.i += 1
 
     def _backtick_end(self, start: int) -> int:
         j = start + 1
@@ -517,6 +571,7 @@ class Pub:
         self.stdin = False
         self.refusals: list[str] = []       # why the guard cannot tell what this command publishes
         self.sub_text = False               # a text argument holds a $( ) or backtick substitution
+        self.push: tuple[list[str], list[str]] | None = None   # a push that skips the pre-push gate: (global -c options, push arguments)
 
 
 class Analysis:
@@ -926,8 +981,167 @@ def _gh_api(args: list[str], base: int, cmd: Cmd, an: Analysis) -> None:
         an.pubs.append(pub)
 
 
+def _hooks_path_config(value: str) -> bool:
+    return value.partition("=")[0].strip().lower() == "core.hookspath"
+
+
+# `git push` options that take their value as the next word (so the value is not read as a flag). The
+# optional-value ones (`--signed`, `--force-with-lease`, `--force-if-includes`) carry a value only as `--x=v`.
+PUSH_VALUE_FLAGS = {"--repo", "-o", "--push-option", "--receive-pack", "--exec", "--recurse-submodules"}
+PUSH_TIMEOUT = 30            # seconds for the `git push --dry-run` that asks git what a push would send
+
+
+def _push_bypass_args(rest: list[str], hooks_path: bool) -> list[str] | None:
+    """The arguments to give `git push --dry-run` when this push skips the pre-push hook (`--no-verify`, any
+    unambiguous prefix of it, or `-c core.hooksPath=...`), else None. The bypass flags and `-q` are dropped,
+    everything else is kept: git itself works out the remote, the refspecs and the rules of its configuration.
+    A push the user already made a dry run sends nothing and is not a publication."""
+    no_verify = dry = False
+    keep: list[str] = []
+    i = 0
+    while i < len(rest):
+        a = rest[i]
+        if a == "--":
+            keep += rest[i:]
+            break
+        if a.startswith("--"):
+            name = a[2:].partition("=")[0]
+            if len(name) >= 4 and name.startswith("no-v") and "no-verify".startswith(name):
+                no_verify = True
+                i += 1
+                continue
+            if len(name) >= 3 and "dry-run".startswith(name):
+                dry = True
+            elif len(name) >= 4 and name.startswith("no-d") and "no-dry-run".startswith(name):
+                dry = False                            # the last of `--dry-run` and `--no-dry-run` wins
+            if name == "quiet":
+                i += 1
+                continue
+            keep.append(a)
+            if "=" not in a and a in PUSH_VALUE_FLAGS and i + 1 < len(rest):
+                i += 1
+                keep.append(rest[i])
+        elif a.startswith("-") and len(a) > 1:
+            if "n" in a[1:] and "o" not in a[1:]:
+                dry = True
+            if a == "-q":
+                i += 1
+                continue
+            keep.append(a)
+            if a == "-o" and i + 1 < len(rest):
+                i += 1
+                keep.append(rest[i])
+        else:
+            keep.append(a)
+        i += 1
+    if dry or not (no_verify or hooks_path):
+        return None
+    return keep
+
+
+def _git_out(cwd: str | None, env: Env, *args: str) -> str:
+    try:
+        p = subprocess.run(["git", *args], capture_output=True, text=True, timeout=10, cwd=cwd if cwd and os.path.isdir(cwd) else None,
+                           env=dict(env.environ))
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return p.stdout.strip() if p.returncode == 0 else ""
+
+
+class PushPlan:
+    """What a gate-skipping push would send, as git itself reports it (`git push --dry-run --porcelain`)."""
+
+    def __init__(self):
+        self.ranges: list[str] = []     # one revision range per destination, for `teyla leak --commits`
+        self.tags: list[str] = []       # annotated tag objects the push sends (tagger and message)
+        self.refusal: list[str] | None = None
+
+
+PORCELAIN = re.compile(r"^(.)\t([^\t:]*):([^\t]*)\t(.*)$")
+UPDATE = re.compile(r"^([0-9a-f]{4,64})\.\.\.?([0-9a-f]{4,64})")
+
+
+def _push_plan(pub: Pub, env: Env, skip_hint_text: str) -> PushPlan:
+    gopts, pargs = pub.push
+    plan = PushPlan()
+    cwd = pub.cmd.cwd
+    # Our flags come last (before any `--`), so a user's `--no-dry-run` or `--no-porcelain` cannot undo them.
+    cut = pargs.index("--") if "--" in pargs else len(pargs)
+    argv = ["git", *gopts, "push", *pargs[:cut], "--dry-run", "--porcelain", "--no-verify", *pargs[cut:]]
+    run_env = dict(env.environ)
+    run_env["GIT_TERMINAL_PROMPT"] = "0"
+    try:
+        timeout = int(env.environ.get("TEYLA_LEAK_GUARD_PUSH_TIMEOUT") or PUSH_TIMEOUT)
+    except ValueError:
+        timeout = PUSH_TIMEOUT
+    try:
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, cwd=cwd, env=run_env)
+    except (subprocess.TimeoutExpired, OSError) as e:
+        why = "timed out" if isinstance(e, subprocess.TimeoutExpired) else f"did not start ({e.strerror or type(e).__name__})"
+        plan.refusal = [f"teyla leak-guard: refused — `git push --dry-run` {why}, so the guard cannot tell what {pub.name} sends.",
+                        "  A push that skips the pre-push gate is not waved through unread. Make the remote reachable, or push without --no-verify.",
+                        skip_hint_text]
+        return plan
+    lines = p.stdout.split("\n")
+    if p.returncode != 0 and not any(PORCELAIN.match(l) and l[0] == "!" for l in lines):
+        first = next((l.strip()[:160] for l in p.stderr.splitlines() if l.strip()), f"exit {p.returncode}")
+        plan.refusal = [f"teyla leak-guard: refused — `git push --dry-run` failed ({first}), so the guard cannot tell what {pub.name} sends.",
+                        "  A push that skips the pre-push gate is not waved through unread. Fix the remote or the refspec, or push without --no-verify.",
+                        skip_hint_text]
+        return plan
+    # One block per destination (a remote can have several push URLs, each with its own history).
+    blocks: list[tuple[str, list[tuple[str, str, str, str]]]] = []
+    for l in lines:
+        if l.startswith("To "):
+            blocks.append((l[3:].strip(), []))
+        elif (m := PORCELAIN.match(l)) and blocks:
+            blocks[-1][1].append(m.groups())
+    tags: list[str] = []
+    for url, entries in blocks:
+        include: list[str] = []
+        exclude: list[str] = []
+        fresh = False
+        for flag, src, dst, summary in entries:
+            if flag in ("-", "=", "!"):                # a deletion, an up-to-date ref and a rejected one send nothing
+                continue
+            sha = _git_out(cwd, env, "rev-parse", "-q", "--verify", f"{src}^{{commit}}")
+            if sha:
+                include.append(sha)
+                m = UPDATE.match(summary)
+                old = _git_out(cwd, env, "rev-parse", "-q", "--verify", f"{m.group(1)}^{{commit}}") if m else ""
+                if old:
+                    exclude.append(old)                # the destination has everything up to `old`
+                else:
+                    fresh = True
+            if _git_out(cwd, env, "cat-file", "-t", src) == "tag":      # whatever name it is pushed under
+                tags.append(_git_out(cwd, env, "cat-file", "tag", src))
+        remote = _same_remote(url, gopts, cwd, env) if fresh else ""
+        if include:
+            rng = " ".join(dict.fromkeys(include))
+            excl = list(dict.fromkeys(exclude)) + ([f"--remotes={remote}"] if remote else [])
+            plan.ranges.append(rng + (" --not " + " ".join(excl) if excl else ""))
+    plan.tags = list(dict.fromkeys(t for t in tags if t))
+    return plan
+
+
+def _same_remote(url: str, gopts: list[str], cwd: str | None, env: Env) -> str:
+    """The configured remote that is exactly this destination, when its tracking refs can be trusted to say what
+    the destination has: its fetch and push URL are the one URL git reports, and no `-c` option rewrites a URL.
+    Anything else (a URL, a push URL, a rewrite) has nothing known: the full history is scanned."""
+    if not url or any(re.search(r"(?i)\burl\b|\.url|insteadof", g) for g in gopts if g != "-c"):
+        return ""
+    if _git_out(cwd, env, "config", "--get-regexp", r"^url\..*\.(insteadof|pushinsteadof)$"):
+        return ""                                      # a rewrite may have moved the URL since the refs were fetched
+    for name in _git_out(cwd, env, "remote").split():
+        if _git_out(cwd, env, "remote", "get-url", "--push", name) == url and _git_out(cwd, env, "remote", "get-url", name) == url:
+            return name
+    return ""
+
+
 def _git(args: list[str], off: int, cmd: Cmd, an: Analysis) -> None:
     i = 0
+    hooks_path = False
+    gopts: list[str] = []                                # the command's own `-c key=value` settings, given to the dry run
     while i < len(args):
         a = args[i]
         if a in ("-C", "--git-dir", "--work-tree"):
@@ -943,12 +1157,27 @@ def _git(args: list[str], off: int, cmd: Cmd, an: Analysis) -> None:
             i += 1
             continue
         if a in ("-c", "--namespace", "--exec-path"):
+            if a == "-c" and i + 1 < len(args):
+                gopts += ["-c", args[i + 1]]
+                if _hooks_path_config(args[i + 1]):
+                    hooks_path = True
             i += 2
             continue
+        if a.startswith("--config-env="):
+            gopts.append(a)
+            if _hooks_path_config(a.partition("=")[2]):
+                hooks_path = True
         if a.startswith("-"):
             i += 1
             continue
         break
+    if i < len(args) and args[i] == "push":
+        pargs = _push_bypass_args(args[i + 1:], hooks_path)
+        if pargs is not None:
+            pub = Pub("git push (pre-push gate skipped)", cmd)
+            pub.push = (gopts, pargs)
+            an.pubs.append(pub)
+        return
     if i >= len(args) or args[i] not in GIT_TEXT_VERBS:
         return
     verb = args[i]
@@ -1167,12 +1396,12 @@ def collect_text(pub: Pub, env: Env) -> list[str]:
 
 # --- the scanner ------------------------------------------------------------------------------------------
 
-def run_scanner(text: str, env: Env) -> tuple[int, list[str]]:
+def run_scanner(text: str, env: Env, args: tuple[str, ...] = ("--text", "-"), cwd: str | None = None) -> tuple[int, list[str]]:
     exe = shutil.which("teyla", path=env.environ.get("PATH"))
     if not exe and os.access(os.path.join(env.home, ".local", "bin", "teyla"), os.X_OK):
         exe = os.path.join(env.home, ".local", "bin", "teyla")        # a uv tool install is not on a GUI app's PATH
-    argv = [exe, "leak", "--text", "-"] if exe else [sys.executable, "-I", "-m", "teyla.leak", "--text", "-"]
-    cwd = env.cwd if os.path.isdir(env.cwd) else None
+    argv = [exe, "leak", *args] if exe else [sys.executable, "-I", "-m", "teyla.leak", *args]
+    cwd = cwd if cwd and os.path.isdir(cwd) else env.cwd if os.path.isdir(env.cwd) else None
     try:
         timeout = int(env.environ.get("TEYLA_LEAK_GUARD_TIMEOUT") or SCAN_TIMEOUT)
     except ValueError:
@@ -1234,11 +1463,29 @@ def decide_bash(command: str, env: Env) -> list[str] | None:
     except Refuse as r:
         return r.lines
     text = "\n".join(p for p in pieces if p)
-    if not text.strip():
-        return None
-    names = ", ".join(dict.fromkeys(p.name for p in active))
+    scans: list[tuple[str, str, tuple[str, ...], str | None]] = []       # (names, stdin, scanner args, directory)
+    if text.strip():
+        scans.append((", ".join(dict.fromkeys(p.name for p in active if p.push is None)), text, ("--text", "-"), None))
+    for pub in active:
+        if pub.push is not None:
+            plan = _push_plan(pub, env, skip_hint(env))
+            if plan.refusal:
+                return plan.refusal
+            for rng in dict.fromkeys(plan.ranges):
+                scans.append((pub.name, "", ("--commits", rng), pub.cmd.cwd))
+            if plan.tags:
+                scans.append(("git push (annotated tags)", "\n".join(plan.tags), ("--text", "-"), None))
+    for names, stdin, sargs, where in scans:
+        out = _scan_one(names, stdin, sargs, where, env)
+        if out is not None:
+            return out
+    return None
+
+
+def _scan_one(names: str, text: str, sargs: tuple[str, ...], where: str | None, env: Env) -> list[str] | None:
+    outgoing = sargs[0] == "--commits"
     try:
-        code, lines = run_scanner(text, env)
+        code, lines = run_scanner(text, env, sargs, where)
     except subprocess.TimeoutExpired:
         return [f"teyla leak-guard: refused — the scanner did not answer in time, so {names} is not waved through.", skip_hint(env)]
     except OSError as e:
@@ -1247,6 +1494,11 @@ def decide_bash(command: str, env: Env) -> list[str] | None:
     if code == 0:
         return None
     if code == 1:
+        if outgoing:
+            return [f"teyla leak-guard: refused — {names}: the commits it sends have a finding, and the pre-push gate that would catch it is skipped:",
+                    *["  " + l for l in lines],
+                    f"  Fix: amend or rewrite the commit so the value is gone (`teyla leak --commits '{sargs[1]}'` shows it), then push without",
+                    "  --no-verify or a core.hooksPath override, so the pre-push gate runs as usual."]
         return [f"teyla leak-guard: refused — the text {names} publishes has a finding:", *["  " + l for l in lines],
                 "  Fix: remove the value from the text; reference where it lives instead (a path, a Keychain item name)."]
     if code == 2:

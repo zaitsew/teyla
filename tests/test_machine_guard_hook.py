@@ -530,3 +530,89 @@ def test_the_same_kind_in_two_worktrees_is_asked_for_each(box):
     box.run("cd /w/tree-a && xcodebuild test; cd /w/tree-b && xcodebuild test", mode="allow")
     assert box.called() == ["load --admit build", "load --admit build"]
     assert box.cwds() == ["/w/tree-a", "/w/tree-b"]
+
+
+# --- heavy work behind a wrapper: eval, xargs, find -exec, ssh, an interpreter's -c ---------------
+
+WRAPPED_HEAVY = [
+    ("eval xcodebuild -scheme A test", "build"),
+    ('eval "xcodebuild -scheme A test"', "build"),
+    ("eval 'cd /x && xcodebuild test'", "build"),
+    ('sh -c "eval xcodebuild test"', "build"),
+    ("bash -c 'eval \"xcrun simctl boot A\"'", "sim"),
+    ("eval 'codex exec do-it'", "lane"),
+    ("ls *.xcodeproj | xargs xcodebuild -scheme A test", "build"),
+    ("ls | xargs -n 1 xcodebuild test -project", "build"),
+    ("ls | xargs -I{} xcodebuild -project {} test", "build"),
+    ("ls | xargs -I % xcodebuild -project % test", "build"),
+    ("printf 'A\\nB\\n' | xargs -P 2 -n1 xcrun simctl boot", "sim"),
+    ("find . -name '*.xcodeproj' -exec xcodebuild -scheme A test {} \\;", "build"),
+    ("find . -name '*.xcodeproj' -execdir xcodebuild test {} +", "build"),
+    ("find . -name gradlew -exec {} assembleDebug \\;", None),     # `{}` as the program is unknowable: allowed
+    ("find . -name x -exec sh -c 'xcodebuild test' \\;", "build"),
+    ("find . -type d -exec ls {} \\; -exec xcodebuild test \\;", "build"),
+    ("python3 -c \"import subprocess; subprocess.run(['xcodebuild', '-scheme', 'A', 'test'])\"", "build"),
+    ("python3 -c 'import os; os.system(\"xcodebuild -scheme A test\")'", "build"),
+    ("python3 -c \"import os; os.system('true; xcodebuild test')\"", "build"),
+    ("python3 -c \"import subprocess; subprocess.run('ls && xcodebuild test', shell=True)\"", "build"),
+    ('eval "echo ready;" "xcodebuild test"', "build"),
+    ("eval 'echo ready;' 'xcrun simctl boot A'", "sim"),
+    ("python3 -I -c \"import subprocess as s; s.check_call(['xcrun', 'simctl', 'boot', 'X'])\"", "sim"),
+    ("python3 -c \"import subprocess; subprocess.run(['ls']); subprocess.run(['gradle', 'build'])\"", "build"),
+    ("node -e \"require('child_process').execSync('xcodebuild test')\"", "build"),
+    ("sh -c \"python3 -c \\\"import subprocess; subprocess.run(['swift', 'build'])\\\"\"", "build"),
+]
+
+
+@pytest.mark.parametrize("command,kind", WRAPPED_HEAVY)
+def test_heavy_work_behind_a_wrapper_gets_the_same_decision_as_the_plain_form(box, command, kind):
+    r = box.run(command, mode="allow")
+    assert (r.returncode, r.stdout, r.stderr) == (0, "", ""), command
+    assert box.called() == ([f"load --admit {kind}"] if kind else []), command
+
+
+@pytest.mark.parametrize("command", [
+    "eval xcodebuild test", "ls | xargs xcodebuild test", "find . -name '*.xcodeproj' -exec xcodebuild test {} \\;",
+    "python3 -c \"import subprocess; subprocess.run(['xcodebuild', 'test'])\"",
+])
+def test_a_refusal_reaches_the_model_for_the_wrapped_forms_too(box, command):
+    r = box.run(command)
+    assert r.returncode == 2 and r.stderr.startswith("teyla guard: build refused"), command
+
+
+def test_a_command_run_on_another_host_over_ssh_is_not_this_machines_load(box):
+    for command in ("ssh build-host xcodebuild -scheme A test", "ssh -t user@build-host 'cd /x && xcodebuild test'",
+                    "ssh build-host xcrun simctl boot X", "mosh build-host gradle build", "scp A.zip build-host:/x"):
+        r = box.run(command)
+        assert (r.returncode, r.stdout, r.stderr) == (0, "", ""), command
+    assert box.called() == []
+
+
+def test_work_on_this_machine_after_an_ssh_in_the_same_line_is_still_admitted(box):
+    box.run("ssh build-host uptime && xcodebuild -scheme A test", mode="allow")
+    assert box.called() == ["load --admit build"]
+
+
+@pytest.mark.parametrize("command", [
+    "git commit -m \"fix xcodebuild flag\"", "grep -rn xcodebuild .", "echo xcodebuild", "echo xcodebuild test",
+    "eval echo xcodebuild", "eval 'git commit -m \"xcodebuild test\"'", "eval \"grep xcodebuild log\"",
+    "grep -l xcodebuild * | xargs wc -l", "ls | xargs grep xcodebuild", "ls | xargs echo xcodebuild test",
+    "find . -name xcodebuild", "find . -name '*.swift' -exec grep xcodebuild {} \\;", "find . -type f -exec wc -l {} +",
+    "python3 -c \"print('xcodebuild test')\"", "python3 -c \"import subprocess; print('xcodebuild test')\"",
+    "python3 -c \"import subprocess; subprocess.run(['echo', 'xcodebuild', 'test'])\"",
+    "python3 -c \"import subprocess; subprocess.run(['git', 'commit', '-m', 'fix xcodebuild'])\"",
+    "python3 -c \"import subprocess; subprocess.run(['xcodebuild', '-list'])\"",
+    "node -e \"console.log('xcodebuild test')\"", "python3 -m xcodebuild_helper",
+])
+def test_a_heavy_word_that_is_only_text_is_not_classified_as_heavy(box, command):
+    r = box.run(command)
+    assert (r.returncode, r.stdout, r.stderr) == (0, "", ""), command
+    assert box.called() == [], command
+
+
+def test_a_brace_pair_or_a_parameter_in_a_word_is_not_a_group(box):
+    box.run("ls | xargs -I{} xcodebuild -project {} test && echo ${HOME}", mode="allow")
+    assert box.called() == ["load --admit build"]
+    box.calls.write_text("")
+    box.run("{ xcodebuild test; }", mode="allow")
+    assert box.called() == ["load --admit build"]

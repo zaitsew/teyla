@@ -1,0 +1,63 @@
+{
+  "id": "mac.command-bar",
+  "title": "Command bar",
+  "area": "mac",
+  "presentation": "overlay",
+  "device": {
+    "w": 560,
+    "h": 380
+  },
+  "source": [
+    "apps/mac/Teyla/UI/CommandBarView.swift:4",
+    "apps/mac/Teyla/Core/CommandBar.swift:32"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macCommandBar",
+    "p": {
+      "rows": [
+        {
+          "icon": "house",
+          "title": "Go to Home",
+          "detail": "Core products and top decisions",
+          "on": true
+        },
+        {
+          "icon": "tray",
+          "title": "Go to Decisions",
+          "detail": "Questions that wait on you"
+        },
+        {
+          "icon": "square.grid.2x2",
+          "title": "Go to Products",
+          "detail": "Every product, with its health"
+        },
+        {
+          "icon": "megaphone",
+          "title": "Go to Growth",
+          "detail": "Posts today, drafts to review"
+        },
+        {
+          "icon": "creditcard",
+          "title": "Go to Money",
+          "detail": "What leaves your accounts"
+        },
+        {
+          "icon": "gauge.with.dots.needle.67percent",
+          "title": "Go to Operations",
+          "detail": "What failed or needs capacity"
+        },
+        {
+          "icon": "shippingbox",
+          "title": "Open Atlas",
+          "detail": "Product page"
+        },
+        {
+          "icon": "square.and.pencil",
+          "title": "New task",
+          "detail": "⌘N"
+        }
+      ]
+    }
+  }
+}

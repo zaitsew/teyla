@@ -1,0 +1,69 @@
+{
+  "id": "mac.welcome-running",
+  "title": "Welcome, reading",
+  "area": "mac",
+  "presentation": "cover",
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/UI/DiagnosisViews.swift:45"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macBare",
+    "p": {
+      "kids": [
+        {
+          "t": "h",
+          "gap": 12,
+          "align": "center",
+          "kids": [
+            {
+              "t": "use",
+              "c": "brandMark",
+              "p": {
+                "size": 44
+              }
+            },
+            {
+              "t": "text",
+              "v": "Teyla",
+              "s": "mac-page-title",
+              "c": "text",
+              "size": 34
+            }
+          ]
+        },
+        {
+          "t": "text",
+          "v": "Teyla reads your Claude Code and Codex sessions on your Mac, shows what they cost and what's waiting on you, and fixes the waste. Nothing about your sessions leaves your Mac unless you turn it on.",
+          "s": "mac-card-title",
+          "c": "text",
+          "w": 560,
+          "align": "center"
+        },
+        {
+          "t": "v",
+          "gap": 8,
+          "align": "center",
+          "kids": [
+            {
+              "t": "icon",
+              "n": "progress.indicator",
+              "size": 18,
+              "c": "text-secondary"
+            },
+            {
+              "t": "text",
+              "v": "Reading your sessions… 14 s",
+              "s": "mac-card-title",
+              "c": "text"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

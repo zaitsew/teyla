@@ -44,6 +44,7 @@ import json
 import os
 import pathlib
 import secrets
+import time
 import tomllib
 
 # The filenames that decide what a run was allowed to do and what it did. No tool
@@ -274,6 +275,9 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+UNPARSEABLE_MARKER_TTL = 600.0      # seconds; see active_runs
+
+
 def active_runs(prune: bool = True) -> list[str]:
     """The runs actually in flight. A marker whose process is gone is stale — a run
     that crashed — and is pruned rather than left to deny every session on this
@@ -291,7 +295,22 @@ def active_runs(prune: bool = True) -> list[str]:
             pid = int(first)
         except (OSError, IndexError, ValueError):
             pid = None
-        if pid is not None and not _pid_alive(pid):
+        if pid is None:
+            # An empty or unreadable marker: a run that died between creating the file and writing
+            # its pid, or a file somebody left. A fresh one may still be a run starting up, so it
+            # counts; one older than UNPARSEABLE_MARKER_TTL has no owner and is ignored and removed.
+            try:
+                age = time.time() - p.stat().st_mtime
+            except OSError:
+                age = 0.0
+            if age > UNPARSEABLE_MARKER_TTL:
+                if prune:
+                    try:
+                        p.unlink()
+                    except OSError:
+                        pass
+                continue
+        elif not _pid_alive(pid):
             if prune:
                 try:
                     p.unlink()

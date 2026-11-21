@@ -1,0 +1,48 @@
+{
+  "id": "cli.load",
+  "title": "`teyla load`, worsening",
+  "area": "cli",
+  "presentation": "push",
+  "device": {
+    "w": 860,
+    "h": 352
+  },
+  "source": [
+    "src/teyla/load.py:1690",
+    "src/teyla/load.py:1457"
+  ],
+  "root": {
+    "t": "use",
+    "c": "terminal",
+    "p": {
+      "title": "teyla — zsh — 100×30",
+      "lines": [
+        {
+          "cmd": "teyla load"
+        },
+        [
+          "load: ",
+          {
+            "v": "WORSENING",
+            "role": "needs-you"
+          },
+          " — swap growing 4.1 GB per 30 min (+0.9 GB in the last 5 min; worsening > 4 GB);"
+        ],
+        "  compressor 7.7 GB = 32% of RAM (warn ≥ 30%)",
+        "memory: 24.0 GB RAM · swap 3.2 GB of 4.0 GB (13% of RAM) · compressor 7.7 GB · pressure normal",
+        "disk: 114.6 GB free",
+        "trend (15 min, 15 samples): swap +4.1 GB per 30 min · disk 101.3 GB free in 15 min · swap-out 2.0 MB/s",
+        "hold: WORSENING 0 min ago; new simulators and builds wait 3 more min",
+        "cpu: load 37.8 / 47.2 / 30.3 on 10 cores",
+        "sims: 0 booted",
+        "builds: 1 running (xcodebuild 1m); compilers 1 (0.8 GB)",
+        "daemons: 1 JVM (gradle 0.7 GB 10m)",
+        "agents: claude 7 · codex 2 · grok 0 · headless lanes 0",
+        "browsers: Chrome 2.9 GB (16 renderers, 2.2 GB)",
+        "vms: 2 (8.0 GB)",
+        "top: qemu-system-aarch64 5.6 GB, Google Chrome 2.9 GB, Claude 2.4 GB, ...",
+        "guard, last hour: 7 admitted, 9 refused (build 8, sim 1)"
+      ]
+    }
+  }
+}

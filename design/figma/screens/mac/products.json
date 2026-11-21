@@ -1,0 +1,841 @@
+{
+  "id": "mac.products",
+  "title": "Products",
+  "area": "mac",
+  "presentation": "tab",
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/UI/PortfolioViews.swift:81"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macWindow",
+    "p": {
+      "selected": "products",
+      "badges": {
+        "today": 4,
+        "decisions": 4,
+        "operations": 1
+      },
+      "linked": [
+        "today",
+        "home",
+        "decisions",
+        "products",
+        "settings"
+      ],
+      "kids": [
+        {
+          "t": "use",
+          "c": "macPageHeader",
+          "p": {
+            "title": "All products",
+            "context": "1 off track · 1 at risk · 3 on track · 1 parked · Stores checked 3 h ago · GitHub 20 min ago"
+          }
+        },
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 8,
+          "kids": [
+            {
+              "t": "use",
+              "c": "macSection",
+              "p": {
+                "title": "Focus",
+                "note": "The product with the most outside weekly users."
+              }
+            },
+            {
+              "t": "use",
+              "c": "macRowGroup",
+              "p": {
+                "kids": [
+                  {
+                    "t": "h",
+                    "w": "fill",
+                    "gap": 12,
+                    "pad": [
+                      8,
+                      0
+                    ],
+                    "align": "center",
+                    "link": "mac.product",
+                    "kids": [
+                      {
+                        "t": "use",
+                        "c": "macProductIcon",
+                        "p": {
+                          "letter": "A",
+                          "size": 30
+                        }
+                      },
+                      {
+                        "t": "v",
+                        "w": "fill",
+                        "gap": 2,
+                        "kids": [
+                          {
+                            "t": "text",
+                            "v": "Atlas",
+                            "s": "mac-body",
+                            "c": "text",
+                            "weight": 600
+                          },
+                          {
+                            "t": "text",
+                            "v": "Selling: ten teams use it every week. Next fact: a first paid plan.",
+                            "s": "mac-caption",
+                            "c": "text-secondary",
+                            "w": "fill"
+                          }
+                        ]
+                      },
+                      {
+                        "t": "use",
+                        "c": "macChip",
+                        "p": {
+                          "text": "Selling",
+                          "tone": "primary"
+                        }
+                      },
+                      {
+                        "t": "use",
+                        "c": "macChip",
+                        "p": {
+                          "text": "Venture"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "t": "h",
+          "gap": 16,
+          "align": "center",
+          "kids": [
+            {
+              "t": "use",
+              "c": "macSegment",
+              "p": {
+                "options": [
+                  "All",
+                  "Needs attention"
+                ],
+                "selected": "All"
+              }
+            },
+            {
+              "t": "h",
+              "gap": 6,
+              "align": "center",
+              "kids": [
+                {
+                  "t": "icon",
+                  "n": "square",
+                  "size": 14,
+                  "c": "text-secondary"
+                },
+                {
+                  "t": "text",
+                  "v": "Show parked (1)",
+                  "s": "mac-body",
+                  "c": "text"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "t": "use",
+          "c": "macRowGroup",
+          "p": {
+            "kids": [
+              {
+                "t": "h",
+                "w": "fill",
+                "gap": 12,
+                "pad": [
+                  8,
+                  0
+                ],
+                "kids": [
+                  {
+                    "t": "text",
+                    "v": "Product",
+                    "s": "mac-caption",
+                    "c": "text-secondary",
+                    "w": "fill",
+                    "align": "left"
+                  },
+                  {
+                    "t": "text",
+                    "v": "Commits",
+                    "s": "mac-caption",
+                    "c": "text-secondary",
+                    "w": 64,
+                    "align": "left"
+                  },
+                  {
+                    "t": "text",
+                    "v": "Platforms",
+                    "s": "mac-caption",
+                    "c": "text-secondary",
+                    "w": 140,
+                    "align": "left"
+                  },
+                  {
+                    "t": "text",
+                    "v": "PRs",
+                    "s": "mac-caption",
+                    "c": "text-secondary",
+                    "w": 64,
+                    "align": "right"
+                  },
+                  {
+                    "t": "text",
+                    "v": "Waiting",
+                    "s": "mac-caption",
+                    "c": "text-secondary",
+                    "w": 64,
+                    "align": "right"
+                  },
+                  {
+                    "t": "text",
+                    "v": "Spend 7d",
+                    "s": "mac-caption",
+                    "c": "text-secondary",
+                    "w": 64,
+                    "align": "right"
+                  },
+                  {
+                    "t": "text",
+                    "v": "Active",
+                    "s": "mac-caption",
+                    "c": "text-secondary",
+                    "w": 64,
+                    "align": "right"
+                  }
+                ]
+              },
+              {
+                "t": "h",
+                "w": "fill",
+                "gap": 12,
+                "align": "center",
+                "pad": [
+                  8,
+                  0
+                ],
+                "link": "mac.product",
+                "kids": [
+                  {
+                    "t": "h",
+                    "w": "fill",
+                    "gap": 12,
+                    "align": "center",
+                    "kids": [
+                      {
+                        "t": "icon",
+                        "n": "star.fill",
+                        "size": 14,
+                        "c": "needs-you"
+                      },
+                      {
+                        "t": "use",
+                        "c": "macProductIcon",
+                        "p": {
+                          "letter": "A",
+                          "size": 30
+                        }
+                      },
+                      {
+                        "t": "v",
+                        "w": "fill",
+                        "gap": 2,
+                        "kids": [
+                          {
+                            "t": "h",
+                            "gap": 8,
+                            "align": "center",
+                            "kids": [
+                              {
+                                "t": "text",
+                                "v": "Atlas",
+                                "s": "mac-body",
+                                "c": "text",
+                                "weight": 600
+                              },
+                              {
+                                "t": "text",
+                                "v": "Beta",
+                                "s": "mac-caption",
+                                "c": "text-secondary"
+                              },
+                              {
+                                "t": "use",
+                                "c": "macChip",
+                                "p": {
+                                  "text": "Selling"
+                                }
+                              }
+                            ]
+                          },
+                          {
+                            "t": "text",
+                            "v": "Ten teams on the paid plan by 1 February",
+                            "s": "mac-caption",
+                            "c": "text-secondary",
+                            "w": "fill"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "t": "h",
+                    "w": 64,
+                    "kids": [
+                      {
+                        "t": "use",
+                        "c": "macSpark",
+                        "p": {
+                          "heights": [
+                            0.3,
+                            0.5,
+                            0.4,
+                            0.7,
+                            0.6,
+                            0.9,
+                            1
+                          ],
+                          "h": 18,
+                          "bar": 3
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "t": "h",
+                    "w": 140,
+                    "gap": 4,
+                    "align": "center",
+                    "kids": [
+                      {
+                        "t": "icon",
+                        "n": "iphone",
+                        "size": 12,
+                        "c": "text-secondary"
+                      },
+                      {
+                        "t": "icon",
+                        "n": "laptopcomputer",
+                        "size": 12,
+                        "c": "text-secondary"
+                      },
+                      {
+                        "t": "icon",
+                        "n": "globe",
+                        "size": 12,
+                        "c": "text-secondary"
+                      }
+                    ]
+                  },
+                  {
+                    "t": "text",
+                    "v": "2",
+                    "s": "mac-body",
+                    "c": "text",
+                    "w": 64,
+                    "align": "right"
+                  },
+                  {
+                    "t": "text",
+                    "v": "2",
+                    "s": "mac-body",
+                    "c": "needs-you",
+                    "w": 64,
+                    "align": "right"
+                  },
+                  {
+                    "t": "text",
+                    "v": "$18",
+                    "s": "mac-body",
+                    "c": "text",
+                    "w": 64,
+                    "align": "right"
+                  },
+                  {
+                    "t": "text",
+                    "v": "2 h",
+                    "s": "mac-body",
+                    "c": "text",
+                    "w": 64,
+                    "align": "right"
+                  }
+                ]
+              },
+              {
+                "t": "h",
+                "w": "fill",
+                "gap": 12,
+                "align": "center",
+                "pad": [
+                  8,
+                  0
+                ],
+                "link": "mac.product",
+                "kids": [
+                  {
+                    "t": "h",
+                    "w": "fill",
+                    "gap": 12,
+                    "align": "center",
+                    "kids": [
+                      {
+                        "t": "icon",
+                        "n": "star",
+                        "size": 14,
+                        "c": "text-secondary"
+                      },
+                      {
+                        "t": "use",
+                        "c": "macProductIcon",
+                        "p": {
+                          "letter": "P",
+                          "size": 30
+                        }
+                      },
+                      {
+                        "t": "v",
+                        "w": "fill",
+                        "gap": 2,
+                        "kids": [
+                          {
+                            "t": "h",
+                            "gap": 8,
+                            "align": "center",
+                            "kids": [
+                              {
+                                "t": "text",
+                                "v": "Pebble",
+                                "s": "mac-body",
+                                "c": "text",
+                                "weight": 600
+                              },
+                              {
+                                "t": "text",
+                                "v": "Beta",
+                                "s": "mac-caption",
+                                "c": "text-secondary"
+                              },
+                              {
+                                "t": "use",
+                                "c": "macChip",
+                                "p": {
+                                  "text": "Testing"
+                                }
+                              },
+                              {
+                                "t": "use",
+                                "c": "macChip",
+                                "p": {
+                                  "text": "At risk",
+                                  "tone": "needs-you",
+                                  "icon": "exclamationmark.triangle"
+                                }
+                              }
+                            ]
+                          },
+                          {
+                            "t": "text",
+                            "v": "Build 14 waits for the sync review",
+                            "s": "mac-caption",
+                            "c": "text-secondary",
+                            "w": "fill"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "t": "h",
+                    "w": 64,
+                    "kids": [
+                      {
+                        "t": "use",
+                        "c": "macSpark",
+                        "p": {
+                          "heights": [
+                            0.6,
+                            0.4,
+                            0.5,
+                            0.3,
+                            0.8,
+                            0.7,
+                            0.5
+                          ],
+                          "h": 18,
+                          "bar": 3
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "t": "h",
+                    "w": 140,
+                    "gap": 4,
+                    "align": "center",
+                    "kids": [
+                      {
+                        "t": "icon",
+                        "n": "iphone",
+                        "size": 12,
+                        "c": "text-secondary"
+                      },
+                      {
+                        "t": "icon",
+                        "n": "applewatch",
+                        "size": 12,
+                        "c": "text-secondary"
+                      }
+                    ]
+                  },
+                  {
+                    "t": "text",
+                    "v": "1",
+                    "s": "mac-body",
+                    "c": "text",
+                    "w": 64,
+                    "align": "right"
+                  },
+                  {
+                    "t": "text",
+                    "v": "1",
+                    "s": "mac-body",
+                    "c": "needs-you",
+                    "w": 64,
+                    "align": "right"
+                  },
+                  {
+                    "t": "text",
+                    "v": "$9",
+                    "s": "mac-body",
+                    "c": "text",
+                    "w": 64,
+                    "align": "right"
+                  },
+                  {
+                    "t": "text",
+                    "v": "1 d",
+                    "s": "mac-body",
+                    "c": "text",
+                    "w": 64,
+                    "align": "right"
+                  }
+                ]
+              },
+              {
+                "t": "h",
+                "w": "fill",
+                "gap": 12,
+                "align": "center",
+                "pad": [
+                  8,
+                  0
+                ],
+                "link": "mac.product",
+                "kids": [
+                  {
+                    "t": "h",
+                    "w": "fill",
+                    "gap": 12,
+                    "align": "center",
+                    "kids": [
+                      {
+                        "t": "icon",
+                        "n": "star",
+                        "size": 14,
+                        "c": "text-secondary"
+                      },
+                      {
+                        "t": "use",
+                        "c": "macProductIcon",
+                        "p": {
+                          "letter": "Q",
+                          "size": 30
+                        }
+                      },
+                      {
+                        "t": "v",
+                        "w": "fill",
+                        "gap": 2,
+                        "kids": [
+                          {
+                            "t": "h",
+                            "gap": 8,
+                            "align": "center",
+                            "kids": [
+                              {
+                                "t": "text",
+                                "v": "Quill",
+                                "s": "mac-body",
+                                "c": "text",
+                                "weight": 600
+                              },
+                              {
+                                "t": "text",
+                                "v": "Live",
+                                "s": "mac-caption",
+                                "c": "text-secondary"
+                              },
+                              {
+                                "t": "use",
+                                "c": "macChip",
+                                "p": {
+                                  "text": "Launched"
+                                }
+                              }
+                            ]
+                          },
+                          {
+                            "t": "text",
+                            "v": "14 active users, 2 new this week",
+                            "s": "mac-caption",
+                            "c": "text-secondary",
+                            "w": "fill"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "t": "h",
+                    "w": 64,
+                    "kids": [
+                      {
+                        "t": "use",
+                        "c": "macSpark",
+                        "p": {
+                          "heights": [
+                            0.2,
+                            0.2,
+                            0.4,
+                            0.3,
+                            0.5,
+                            0.3,
+                            0.4
+                          ],
+                          "h": 18,
+                          "bar": 3
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "t": "h",
+                    "w": 140,
+                    "gap": 4,
+                    "align": "center",
+                    "kids": [
+                      {
+                        "t": "icon",
+                        "n": "globe",
+                        "size": 12,
+                        "c": "text-secondary"
+                      }
+                    ]
+                  },
+                  {
+                    "t": "text",
+                    "v": "0",
+                    "s": "mac-body",
+                    "c": "text-tertiary",
+                    "w": 64,
+                    "align": "right"
+                  },
+                  {
+                    "t": "text",
+                    "v": "0",
+                    "s": "mac-body",
+                    "c": "text-tertiary",
+                    "w": 64,
+                    "align": "right"
+                  },
+                  {
+                    "t": "text",
+                    "v": "$3",
+                    "s": "mac-body",
+                    "c": "text",
+                    "w": 64,
+                    "align": "right"
+                  },
+                  {
+                    "t": "text",
+                    "v": "3 h",
+                    "s": "mac-body",
+                    "c": "text",
+                    "w": 64,
+                    "align": "right"
+                  }
+                ]
+              },
+              {
+                "t": "h",
+                "w": "fill",
+                "gap": 12,
+                "align": "center",
+                "pad": [
+                  8,
+                  0
+                ],
+                "link": "mac.product",
+                "kids": [
+                  {
+                    "t": "h",
+                    "w": "fill",
+                    "gap": 12,
+                    "align": "center",
+                    "kids": [
+                      {
+                        "t": "icon",
+                        "n": "star",
+                        "size": 14,
+                        "c": "text-secondary"
+                      },
+                      {
+                        "t": "use",
+                        "c": "macProductIcon",
+                        "p": {
+                          "letter": "F",
+                          "size": 30
+                        }
+                      },
+                      {
+                        "t": "v",
+                        "w": "fill",
+                        "gap": 2,
+                        "kids": [
+                          {
+                            "t": "h",
+                            "gap": 8,
+                            "align": "center",
+                            "kids": [
+                              {
+                                "t": "text",
+                                "v": "Fern",
+                                "s": "mac-body",
+                                "c": "text",
+                                "weight": 600
+                              },
+                              {
+                                "t": "text",
+                                "v": "Building",
+                                "s": "mac-caption",
+                                "c": "text-secondary"
+                              },
+                              {
+                                "t": "use",
+                                "c": "macChip",
+                                "p": {
+                                  "text": "Off track",
+                                  "tone": "danger",
+                                  "icon": "exclamationmark.octagon"
+                                }
+                              }
+                            ]
+                          },
+                          {
+                            "t": "text",
+                            "v": "No release in 3 weeks",
+                            "s": "mac-caption",
+                            "c": "text-secondary",
+                            "w": "fill"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "t": "h",
+                    "w": 64,
+                    "kids": [
+                      {
+                        "t": "use",
+                        "c": "macSpark",
+                        "p": {
+                          "heights": [
+                            0.3,
+                            0.6,
+                            0.5,
+                            0.8,
+                            1
+                          ],
+                          "h": 18,
+                          "bar": 3
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "t": "h",
+                    "w": 140,
+                    "gap": 4,
+                    "align": "center",
+                    "kids": [
+                      {
+                        "t": "icon",
+                        "n": "iphone",
+                        "size": 12,
+                        "c": "text-secondary"
+                      }
+                    ]
+                  },
+                  {
+                    "t": "text",
+                    "v": "3",
+                    "s": "mac-body",
+                    "c": "text",
+                    "w": 64,
+                    "align": "right"
+                  },
+                  {
+                    "t": "text",
+                    "v": "0",
+                    "s": "mac-body",
+                    "c": "text-tertiary",
+                    "w": 64,
+                    "align": "right"
+                  },
+                  {
+                    "t": "text",
+                    "v": "$6",
+                    "s": "mac-body",
+                    "c": "text",
+                    "w": 64,
+                    "align": "right"
+                  },
+                  {
+                    "t": "text",
+                    "v": "5 h",
+                    "s": "mac-body",
+                    "c": "text",
+                    "w": 64,
+                    "align": "right"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}
