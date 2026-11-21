@@ -742,7 +742,7 @@ because one mail sender unblocks three products at once.
 
 The full method, the cost table, and four worked case studies are in `docs/PRODUCTIZE.md`.
 
-**`teyla testflight [path...] [--json]`** answers POLICY §11's "did it reach a person". For each
+**`teyla testflight [path...] [--json]`** answers POLICY §14's "did it reach a person". For each
 product whose `[productize.distribution]` ios or macos is a TestFlight value or `app-store`, or
 whose `teyla.toml` sets `[release] apple_bundle_id`, it runs your release tool (`[apple]
 release_tool` in `~/.teyla/platform.toml`) as `beta reached --bundle-id ID --email EMAIL --json`,

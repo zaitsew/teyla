@@ -136,7 +136,7 @@ Teyla reads files on your Mac. It sends nothing about your sessions unless you r
 
 | What | When | Sends |
 |---|---|---|
-| Update check | once a day, on by default | the version number, to GitHub |
+| Update check | daily; off in safe mode | the version number, to GitHub |
 | `teyla spend`, `teyla reviews`, `teyla state` | when you run them | repo names, PR numbers, your login, through your own `gh` |
 | `teyla answer`, `teyla run`, `--model` flags | only when you ask | text, to your model provider under your own login |
 | `teyla relay on` | off by default | open questions and session titles, to your iCloud Drive |

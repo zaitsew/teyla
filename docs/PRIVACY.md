@@ -1,7 +1,7 @@
 # Privacy: every call that leaves your machine
 
 Teyla reads your session logs, your repos and your config on your Mac. It has no server, no account,
-no telemetry and no analytics SDK. It never uploads a transcript. Nothing about your sessions leaves your Mac unless you turn on a feature that says so; today
+no telemetry and no analytics SDK in the CLI, the hooks and the Mac app. The optional test-build packages (`packages/review-*`, the usage counters in a TestFlight build of an app that embeds them) are scoped in "Usage capture in test builds" below: they run in Debug and TestFlight builds only, never in a store build. It never uploads a transcript. Nothing about your sessions leaves your Mac unless you turn on a feature that says so; today
 that is one row (14, the model brief and ask triage), off by default.
 
 Parsed sessions are cached on your Mac in `~/.teyla/cache/sessions/` (mode 0600, directory 0700; it holds what a parsed session holds, including your turn text), never sent anywhere, and removed by `teyla uninstall`; `TEYLA_NO_CACHE=1` turns it off. `teyla start` reads it but never writes it.
@@ -17,7 +17,7 @@ with `--allow-network`. The gate is `src/teyla/net.py`.
 
 | # | Trigger | Host | What is sent | Default on | Safe mode |
 |---|---|---|---|---|---|
-| 1 | The update check: `teyla doctor` (when the cached answer is over a day old), the session-start hook (once a day, in the background, once Teyla is set up), `teyla update --check` | `api.github.com` | A GET for the latest release and commit of `zaitsew/teyla`. It sends only the version, as the User-Agent `teyla/<version>`. The result is cached in `~/.teyla/update-check.json`. `teyla doctor` is not read-only: it also writes `~/.teyla/doctor.json`, `doctor.summary` and `banner.items`, and makes this one call when the cache is stale (`teyla doctor --refresh` always). | Yes | closed |
+| 1 | The update check: `teyla doctor` (when the cached answer is over a day old), the session-start hook (once a day, in the background, once Teyla is set up), `teyla update --check` | `api.github.com` | A GET for the latest release and commit of `zaitsew/teyla`. It sends only the version, as the User-Agent `teyla/<version>`, and installs nothing: installing is row 2. The check is off in safe mode (`teyla config set safe.enabled=true` or `TEYLA_SAFE=1`); `update.channel = none` stops the daily routine installing, not the check. The result is cached in `~/.teyla/update-check.json`. `teyla doctor` is not read-only: it also writes `~/.teyla/doctor.json`, `doctor.summary` and `banner.items`, and makes this one call when the cache is stale (`teyla doctor --refresh` always). | Yes | closed |
 | 2 | `teyla update` (the daily routine runs it, if you installed the routine) | `github.com`, and `pypi.org` for build tools (not in code: `uv` and `pip` reach it) | `uv tool install` or `pip` fetches the new release. No user data. | Only if the routine is installed | closed |
 | 3 | `teyla models --refresh` | `models.dev` | A GET of the public model catalogue. No user data. | No (needs `--refresh`) | closed |
 | 4 | `teyla plugin install owner/repo`, and offer O6 of `teyla start` when you say yes and Claude Code has no Teyla plugin (it installs `zaitsew/teyla`) | `github.com` | `git clone` or `git pull` of the repo you named, or of `zaitsew/teyla` for O6. | No (you name the repo, or say yes to O6) | closed |

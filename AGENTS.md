@@ -93,7 +93,7 @@ disk) are the person's: mention them once. The common ones:
 | Codex ignores the hooks | Codex runs a new hook only after the person trusts it: they open `codex`, answer "Hooks need review" with "Trust all and continue", or type `/hooks`. `teyla harness status` then shows no `untrusted`. You cannot do this for them. |
 | `routine:*` not installed | with a yes: `teyla routine install` |
 
-Python below 3.11, or newer than 3.13: `uv tool install --force --python 3.12 git+https://github.com/zaitsew/teyla@v0.58.1`.
+Python below 3.11, or newer than 3.13, on a Teyla that is already installed: `teyla config set update.python=3.12`, then `teyla update --force`. A bare `uv tool install --force` drops the `work` and `reel` extras.
 
 ## What to say at the end
 

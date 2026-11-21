@@ -1,6 +1,6 @@
 """`teyla testflight` — did the build reach a person, or only reach Apple.
 
-POLICY §11: a build is done when it is installable from the owner's tester account, not when
+POLICY §14: a build is done when it is installable from the owner's tester account, not when
 the upload finished. An upload can sit in processing, fail export compliance, or land in a
 build the tester's group does not include; none of that shows in the uploader's exit code.
 

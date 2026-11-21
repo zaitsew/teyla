@@ -3,6 +3,8 @@
 A policy that asks for a cross-provider review of every non-trivial PR before merge is only as good as
 the record that it happened. The review script appends one line per review to a ledger, and a merge
 gate refuses `gh pr merge` without a ledger entry unless a skip reason is given (which is logged too).
+Teyla does not ship the script or the gate: they are the owner's own (`~/ops/bin/codex-review`,
+`~/ops/bin/claude-review` and the `~/ops/bin/review-gate` hook); this command only reads their ledger.
 This command reads that ledger against GitHub and says, per repo under `code_root`, which PRs merged in
 the last N days were reviewed, which merged with a P1 still open, which were skipped on purpose, and
 which slipped through.

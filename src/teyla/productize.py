@@ -267,7 +267,7 @@ def requirements(pz: dict, repo: pathlib.Path, *, target: str | None = None,
         rows.append(_req("R9", "first_screen", not problems,
                          ", ".join(problems) if problems else f"first_run={first_run}, sample_data={sample_data}"))
 
-    # R10 — one primary platform, the rest by written trigger (POLICY §11). Not tied to the
+    # R10 — one primary platform, the rest by written trigger (POLICY §14). Not tied to the
     # target: a second platform built without a reason costs the same whoever it serves.
     rows.append(_platforms_row(pz, platforms))
     rows.append(_capture_row(pz, repo, target))

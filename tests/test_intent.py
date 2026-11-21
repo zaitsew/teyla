@@ -595,6 +595,16 @@ def test_list_commands(tmp_path, capsys):
     assert rc == 1 and "no intent" in err
 
 
+def test_intent_list_is_the_bare_listing(tmp_path, capsys):
+    """The help names `teyla intent list`; it used to answer "no intent recorded for list"."""
+    intent.capture(hook_payload(prose(450), repo(tmp_path, "alpha")), now=NOW)
+    bare = run_cli(capsys)
+    listed = run_cli(capsys, "list")
+    assert listed == bare and "alpha" in listed[1]
+    rc, out, _ = run_cli(capsys, "list", "alpha")
+    assert rc == 0 and len(out.splitlines()) == 1
+
+
 def test_path_prints_the_file(tmp_path, capsys):
     intent.capture(hook_payload(prose(450), repo(tmp_path, "alpha")), now=NOW)
     rc, out, _ = run_cli(capsys, "path", "alpha")

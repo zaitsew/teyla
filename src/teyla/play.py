@@ -1,6 +1,6 @@
 """`teyla play` — did the Android build reach a person, or only reach Google Play.
 
-The Google Play twin of `teyla testflight` (POLICY §11/§14). A Play upload can sit in a draft
+The Google Play twin of `teyla testflight` (POLICY §14). A Play upload can sit in a draft
 release, be halted, or land on a track nobody is invited to; none of that shows in the uploader's
 exit code. This command asks the owner's release tool, which holds the service-account key:
 

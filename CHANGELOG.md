@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **`teyla prose FILE...` measures a draft; `teyla intent list` works.** `teyla prose README.md` said "unrecognized arguments": the command read only sessions. It now takes file paths (`-` is stdin), prints words, long-sentence share and ban-list hits per file, and exits 1 when one is over a limit. `teyla intent list`, which the help names, answered "no intent recorded for list"; it now prints the per-product list. A test fails when a command or subcommand is missing from `docs/COMMANDS.md` (`prose`, `tg` and seven subcommands were).
+
 - **A release no longer depends on the state of your checkout, and it writes its own changelog heading.** `scripts/release.sh` used to refuse unless the checkout was a clean `main`, and it never touched `CHANGELOG.md`: seven releases (0.55.0 to 0.58.1) piled their notes under "Unreleased". Now it runs in a temporary worktree at `origin/main` (removed at the end, also on failure), moves everything under "## Unreleased" into `## <version> — <date>` and refuses when that section is empty. The notes of 0.55.0 to 0.58.1 are under their own headings; 0.55.0 and 0.55.1 had none.
 
 ## 0.58.1 — 2026-11-19
