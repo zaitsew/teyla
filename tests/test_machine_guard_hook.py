@@ -523,7 +523,9 @@ def test_the_hook_passes_the_dir_the_command_runs_in(box, command, want):
 def test_without_a_cwd_key_the_hook_uses_its_own_directory(box):
     payload = json.dumps({"tool_input": {"command": "xcodebuild test"}})
     box.run("", mode="allow", payload=payload)
-    assert box.cwds() == [os.getcwd()]
+    # The hook passes the shell's logical `$PWD`; os.getcwd() is the physical path. They differ under a
+    # symlink (macOS $TMPDIR is /var/..., really /private/var/..., where scripts/release.sh runs the check).
+    assert [os.path.realpath(c) for c in box.cwds()] == [os.path.realpath(os.getcwd())]
 
 
 def test_the_same_kind_in_two_worktrees_is_asked_for_each(box):
