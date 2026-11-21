@@ -387,39 +387,39 @@ def test_the_python_behind_teyla_is_used_when_python3_lacks_the_package(box):
     refused(box.run(f"gh pr create -t T -b {SECRET}", **kw), "refused")
     # A `#!/usr/bin/env python3` shebang names no file: python3 on PATH decides, and here it has no package.
     console.write_text("#!/usr/bin/env python3\nimport sys\n")
-    refused(box.run("gh pr create -t T -b B", **kw), "the guard failed")
+    refused(box.run("gh pr create -t T -b B", **kw), "is not installed for any python3")
     # A shebang that names an executable outside the known interpreter roots, or one inside the repo the command
     # runs in, is not followed: a planted console script cannot pick the guard's interpreter.
     allow = box.tmp / "python-allow"
     allow.write_text("#!/bin/sh\nexit 0\n")
     allow.chmod(0o755)
     console.write_text(f"#!{allow}\n")
-    refused(box.run(f"cat {box.home}/.ssh/id_rsa", **kw), "the guard failed")
+    refused(box.run(f"cat {box.home}/.ssh/id_rsa", **kw), "is not installed for any python3")
     planted = box.work / "bin"
     planted.mkdir()
     (planted / "python3").write_text("#!/bin/sh\nexit 0\n")
     (planted / "python3").chmod(0o755)
     console.write_text(f"#!{planted / 'python3'}\n")
-    refused(box.run(f"cat {box.home}/.ssh/id_rsa", **kw), "the guard failed")
+    refused(box.run(f"cat {box.home}/.ssh/id_rsa", **kw), "is not installed for any python3")
     (box.work / "teyla").write_text(f"#!{py}\nimport sys\n")       # the script itself inside the repo
     (box.work / "teyla").chmod(0o755)
     refused(box.run("gh pr create -t T -b B", TEYLA_PYTHON=None, TEYLA_PYTHON_ROOTS=str(venv),
-                    path_dirs=f"{bare}:{box.work}:/usr/bin:/bin"), "the guard failed")
+                    path_dirs=f"{bare}:{box.work}:/usr/bin:/bin"), "is not installed for any python3")
     # A relative `./teyla` (`.` on PATH) and a shebang that climbs out of a root with `..` are judged by where
     # the files really are: inside the repo, and outside every root.
     (box.work / "teyla").write_text(f"#!{py}\nimport sys\n")
     refused(box.run("gh pr create -t T -b B", TEYLA_PYTHON=None, TEYLA_PYTHON_ROOTS=str(venv),
-                    path_dirs=f"{bare}:.:/usr/bin:/bin"), "the guard failed")
+                    path_dirs=f"{bare}:.:/usr/bin:/bin"), "is not installed for any python3")
     climb = pathlib.Path("/usr/bin/../..") / str(allow).lstrip("/")
     console.write_text(f"#!{climb}\n")
     refused(box.run("gh pr create -t T -b B", TEYLA_PYTHON=None, TEYLA_PYTHON_ROOTS="/usr/bin",
-                    path_dirs=kw["path_dirs"]), "the guard failed")
+                    path_dirs=kw["path_dirs"]), "is not installed for any python3")
     # The venv is outside every known root once the test stops naming it.
     console.write_text(f"#!{py}\nimport sys\n")
-    refused(box.run("gh pr create -t T -b B", TEYLA_PYTHON=None, path_dirs=kw["path_dirs"]), "the guard failed")
+    refused(box.run("gh pr create -t T -b B", TEYLA_PYTHON=None, path_dirs=kw["path_dirs"]), "is not installed for any python3")
     # No `teyla` anywhere: the same refusal, with the bare python3.
     console.unlink()
-    refused(box.run("gh pr create -t T -b B", **kw), "the guard failed")
+    refused(box.run("gh pr create -t T -b B", **kw), "is not installed for any python3")
 
 
 def test_a_guard_that_crashes_is_a_refusal_for_a_matched_command(box):
@@ -873,3 +873,113 @@ def test_expansions_in_text_that_reaches_a_publication_through_stdin_are_refused
     allowed(box.run("gh pr comment 4 -F - <<< 'literal $(date) and `x`'"))
     allowed(box.run("echo 'literal $(date)' | gh pr comment 4 -F -"))
     allowed(box.run("gh pr comment 4 -F - <<EOF\nplain text, costs $5\nEOF"))
+
+
+# --- sprint 2026-11-20: arithmetic, word-bounded tokens, no teyla ---------------------------------------
+
+def test_arithmetic_expansion_is_one_word_and_its_substitution_is_its_own_command(box):    # ORC-1
+    allowed(box.run('echo "$(( $(date +%s)-s ))s"'))
+    allowed(box.run("echo $(( 1 + 2 ))"))
+    allowed(box.run("n=$(( (1+2)*3 )); echo $n"))
+    allowed(box.run("echo $( (ls) )"))                       # `$( (` is a subshell, not arithmetic
+    # a publication inside the arithmetic is still found and scanned
+    refused(box.run(f"echo $(( $(gh pr create -t T -b {SECRET}) + 1 ))"), "gh pr create")
+    refused(box.run(f'echo "$(( $(git commit -m {SECRET}) ))"'), "git commit")
+
+
+def test_an_unreadable_executable_is_refused_and_real_publications_stay_refused(box):    # HK-7
+    # Kept on purpose: a variable can spell gh or git, and the words around it can be spelt in pieces, so a
+    # token match cannot tell `$PY hi` from `$G push`. docs/LEAK.md says why.
+    refused(box.run("PY=/bin/echo; $PY hi"), "expansion the guard cannot read")
+    refused(box.run("G=git; $G push origin main"), "expansion the guard cannot read")
+    refused(box.run("G=git; $G commit -m x"), "expansion the guard cannot read")
+    refused(box.run("H=gh; $H pr create -t T -b B"), "expansion the guard cannot read")
+    refused(box.run("$(echo gh) pr create -t T -b B"), "expansion the guard cannot read")
+    assert box.scanner_calls() == []
+
+
+def test_the_shell_screen_matches_words_not_substrings(box):                               # HK-5
+    for cmd in ("git log --grep=commit", "git log --grep=tag --oneline", "ls ghost-prs", "echo github issues"):
+        allowed(box.run(cmd))
+    assert box.python_calls() == [], "none of these started python"
+    # real shapes still match, with options between the words and a path in front of the executable
+    refused(box.run(f"gh -R o/r pr create -t T -b {SECRET}"), "gh pr create")
+    refused(box.run(f"/usr/bin/git -C . commit -m {SECRET}"), "git commit")
+    refused(box.run(f"git -c user.name=x tag -a v1 -m {SECRET}"), "git tag")
+
+
+@pytest.fixture
+def no_teyla_box(box):
+    """PATH holds tr, mkdir, date and a python3 that cannot import teyla; no teyla executable anywhere."""
+    only = box.tmp / "only"
+    only.mkdir()
+    for tool in ("mkdir", "date", "tr"):
+        (only / tool).symlink_to(shutil.which(tool))
+    (only / "python3").write_text("#!/bin/sh\nexit 1\n")
+    (only / "python3").chmod(0o755)
+    box.kw = dict(TEYLA_PYTHON=None, path_dirs=str(only), HOME=str(box.home))
+    return box
+
+
+@pytest.mark.parametrize("command", ["gh pr view 12", "gh pr list --state open", "gh pr diff 12", "gh pr checks 12",
+                                     "gh issue view 3", "gh api repos/o/r/pulls/1"])
+def test_a_read_only_shape_goes_on_when_teyla_cannot_be_found(no_teyla_box, command):    # HK-6
+    r = no_teyla_box.run(command, **no_teyla_box.kw)
+    assert r.returncode == 0 and r.stdout == ""
+    assert "not scanned" in r.stderr and r.stderr.count("\n") == 1
+
+
+@pytest.mark.parametrize("command", ["git push origin main && git commit -m x", "gh pr create -t T -b B",
+                                     "gh pr merge 12", "gh pr comment 12 -b hi", "gh release create v1",
+                                     "gh api -X POST repos/o/r/issues -f title=t", "gh api repos/o/r/issues -f title=t",
+                                     "gh pr view 12 && gh pr create -t T -b B", "git tag v1", "git merge topic",
+                                     "gh api -X PUT repos/o/r/pulls/1/merge", "gh repo edit --visibility public",
+                                     "cat ~/.aws/credentials"])
+def test_real_publications_stay_refused_when_teyla_cannot_be_found(no_teyla_box, command):    # HK-6
+    r = no_teyla_box.run(command, **no_teyla_box.kw)
+    assert r.returncode == 2, (command, r.stderr)
+    assert "cannot be scanned" in r.stderr
+
+
+def test_the_read_only_exemption_needs_a_fully_read_only_command(no_teyla_box):
+    r = no_teyla_box.run("gh pr view 12 $(gh pr merge 12)", **no_teyla_box.kw)
+    assert r.returncode == 2
+
+
+def test_git_reads_carry_no_token_so_they_never_need_teyla(no_teyla_box):                 # HK-6
+    for cmd in ("git log --stat", "git show HEAD", "git diff --cached", "git log --grep=commit"):
+        allowed(no_teyla_box.run(cmd, **no_teyla_box.kw))
+
+
+# --- review round: JSON escapes are whitespace; the read-only exemption sees through quoting and chains ------
+
+@pytest.mark.parametrize("command", ["gh\tpr\tcreate -t T -b B", "gh\npr\ncreate -t T -b B", "git\tcommit\t-m\tx",
+                                     "gh\rpr\rcreate -t T -b B"])
+def test_escaped_whitespace_between_the_words_is_still_a_publication(box, command):
+    box.run(command)
+    assert box.python_calls(), command          # the token path ran: it was not waved through as plain
+
+
+@pytest.mark.parametrize("command", ["gh\tpr\tcreate -t T -b B", "gh\npr\ncreate -t T -b B", "git\tcommit\t-m\tx"])
+def test_escaped_whitespace_is_refused_without_teyla_too(no_teyla_box, command):
+    r = no_teyla_box.run(command, **no_teyla_box.kw)
+    assert r.returncode == 2, (command, r.stderr)
+    assert "cannot be scanned" in r.stderr
+
+
+@pytest.mark.parametrize("command", ["gh pr view 12; cat ~/.aws/cred''entials",
+                                     "gh pr view 12 && cat ~/.aws/credentials",
+                                     "gh pr view 12\ncat ~/.aws/cred''entials",
+                                     "gh pr view 12 | tee x", "gh pr view 12 > ~/.ssh/authorized_keys",
+                                     "gh pr view 12; cat ~/.ssh/i\"\"d_ed25519"])
+def test_a_read_only_command_that_chains_or_hides_a_credential_is_refused_without_teyla(no_teyla_box, command):
+    r = no_teyla_box.run(command, **no_teyla_box.kw)
+    assert r.returncode == 2, (command, r.stderr)
+
+
+def test_an_escaped_backslash_before_t_is_not_a_tab(no_teyla_box):
+    # JSON `creden\\tials` is the shell text `creden\tials`, which the shell reads as `credentials`
+    r = no_teyla_box.run("gh pr view 12 && cat ~/.aws/creden\\tials", **no_teyla_box.kw)
+    assert r.returncode == 2, r.stderr
+    r = no_teyla_box.run("cat ~/.aws/creden\\tials", **no_teyla_box.kw)
+    assert r.returncode == 2, r.stderr
