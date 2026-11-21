@@ -49,7 +49,8 @@ def apks():
         cwd=PKG, env=env, capture_output=True, text=True, timeout=1800,
     )
     assert done.returncode == 0, done.stdout[-3000:] + done.stderr[-3000:]
-    subprocess.run(["./gradlew", "--stop"], cwd=PKG, env=env, capture_output=True)
+    # No `./gradlew --stop` (check.sh forbids it): it stops every Gradle daemon on the Mac, including the ones
+    # of another check.sh run. The guard tick stops a daemon idle 30 min.
     out = PKG / "fixture" / "build" / "outputs" / "apk"
     return {"internal": out / "internal" / "fixture-internal.apk", "release": out / "release" / "fixture-release.apk", "meta": out}
 
