@@ -1,0 +1,35 @@
+{
+  "id": "iphone.decisions-waiting",
+  "title": "Decisions · waiting for the Mac",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/HomeView.swift:303"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {},
+      "title": "Decisions",
+      "tab": "decisions",
+      "kids": [
+        {
+          "t": "use",
+          "c": "iosEmpty",
+          "p": {
+            "icon": "desktopcomputer",
+            "title": "Waiting for the Mac",
+            "detail": "Pull down to check again. Wrong key? Pair again in More, under Settings."
+          }
+        }
+      ]
+    }
+  }
+}

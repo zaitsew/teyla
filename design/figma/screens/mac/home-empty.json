@@ -1,0 +1,169 @@
+{
+  "id": "mac.home-empty",
+  "title": "Home, no products",
+  "area": "mac",
+  "presentation": "tab",
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/UI/HomeView.swift:32,39",
+    "apps/mac/Teyla/UI/HomeLogic.swift"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macWindow",
+    "p": {
+      "selected": "home",
+      "badges": {
+        "today": 4,
+        "decisions": 4,
+        "operations": 1
+      },
+      "linked": [
+        "today",
+        "home",
+        "decisions",
+        "products",
+        "settings"
+      ],
+      "kids": [
+        {
+          "t": "use",
+          "c": "macPageHeader",
+          "p": {
+            "title": "Home",
+            "context": "Friday, 20 November 2026"
+          }
+        },
+        {
+          "t": "h",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "tile",
+              "p": {
+                "label": "Decisions",
+                "value": "0",
+                "detail": "Nothing waits on you"
+              }
+            },
+            {
+              "t": "use",
+              "c": "tile",
+              "p": {
+                "label": "Running",
+                "value": "0",
+                "detail": "agent sessions"
+              }
+            },
+            {
+              "t": "use",
+              "c": "tile",
+              "p": {
+                "label": "Posts today",
+                "value": "–",
+                "detail": "Not read yet"
+              }
+            },
+            {
+              "t": "use",
+              "c": "tile",
+              "p": {
+                "label": "Cash per month",
+                "value": "–",
+                "detail": "Not read yet"
+              }
+            },
+            {
+              "t": "use",
+              "c": "tile",
+              "p": {
+                "label": "Disk free",
+                "value": "–",
+                "detail": "Not read yet"
+              }
+            }
+          ]
+        },
+        {
+          "t": "h",
+          "gap": 8,
+          "align": "center",
+          "kids": [
+            {
+              "t": "icon",
+              "n": "checkmark.circle",
+              "size": 14,
+              "c": "text-secondary"
+            },
+            {
+              "t": "text",
+              "v": "Nothing waits on you.",
+              "s": "mac-body",
+              "c": "text-secondary"
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "macSection",
+              "p": {
+                "title": "Products",
+                "note": "Update the teyla command to rank them by users and activity."
+              }
+            },
+            {
+              "t": "text",
+              "v": "No products yet.",
+              "s": "mac-body",
+              "c": "text-secondary"
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "macSection",
+              "p": {
+                "title": "Decisions",
+                "note": "Only you can answer these"
+              }
+            },
+            {
+              "t": "h",
+              "gap": 8,
+              "align": "center",
+              "kids": [
+                {
+                  "t": "icon",
+                  "n": "checkmark.circle",
+                  "size": 14,
+                  "c": "text-secondary"
+                },
+                {
+                  "t": "text",
+                  "v": "Nothing waits on you.",
+                  "s": "mac-body",
+                  "c": "text-secondary"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

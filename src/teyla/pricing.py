@@ -44,6 +44,10 @@ PRICES = {
     "gpt-6-astra": (10.0, 12.5, 1.0, 50.0, "orchestrate", False),
     "gpt-6.1-sol": (2.0, 2.5, 0.1, 10.0, "volume", False),
     "gpt-6-luna": (0.1, 0.125, 0.01, 0.5, "triage", False),
+    # Terra is half of Sol ($1 in / $5 out per 1M, POLICY §1 and the models.dev catalogue); the cache columns are
+    # Sol's scaled by the same half (derived, not read from a price page). It was missing, so every Terra call
+    # showed as "unknown" in `teyla monitor` and as $0 in `teyla spend`.
+    "gpt-6.1-terra": (1.0, 1.25, 0.05, 5.0, "volume", False),
     # Previous generations stay so old transcripts still price.
     "gpt-5.6-sol": (4.0, 4.0, 1.0, 20.0, "volume", False),
     "gpt-5.6-terra": (2.0, 2.0, 0.5, 12.0, "volume", False),

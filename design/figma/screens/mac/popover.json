@@ -1,0 +1,34 @@
+{
+  "id": "mac.popover",
+  "title": "Menu bar popover",
+  "area": "mac",
+  "presentation": "overlay",
+  "device": {
+    "w": 320,
+    "h": 340
+  },
+  "source": [
+    "apps/mac/Teyla/UI/MenuBar.swift:16"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macPopover",
+    "p": {
+      "brief": "4 decisions wait on you. Atlas needs a renewal.",
+      "questions": [
+        [
+          "Atlas",
+          "Renew the Atlas domain for another year?"
+        ],
+        [
+          "Pebble",
+          "Ship Pebble 1.4 to testers today, or wait for the sync fix?"
+        ],
+        [
+          "Quill",
+          "Which name for the free plan?"
+        ]
+      ]
+    }
+  }
+}

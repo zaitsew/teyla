@@ -1,0 +1,116 @@
+{
+  "id": "iphone.decisions-end",
+  "title": "Decisions · the foot of the page",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/DecisionsView.swift:34",
+    "apps/ios/Teyla/UI/DecisionsView.swift:278",
+    "apps/ios/Teyla/UI/DecisionsView.swift:298"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {
+        "decisions": 6
+      },
+      "title": "Decisions",
+      "large": false,
+      "tab": "decisions",
+      "kids": [
+        {
+          "t": "use",
+          "c": "iosCloseFold",
+          "p": {
+            "count": 3,
+            "open": false,
+            "items": [
+              {
+                "question": "Is the Orbit landing page copy final?",
+                "detail": "Orbit · The page shipped 6 days ago and nobody has edited it."
+              },
+              {
+                "question": "Should Fern get a dark icon?",
+                "detail": "Fern · The question is older than the redesign it asks about."
+              },
+              {
+                "question": "Rename the Quill sync folder?",
+                "detail": "Quill · The sync folder was removed in build 30."
+              }
+            ],
+            "state": "idle"
+          }
+        },
+        {
+          "t": "use",
+          "c": "iosFold",
+          "p": {
+            "title": "Agents can settle 4",
+            "open": false,
+            "kids": []
+          }
+        },
+        {
+          "t": "use",
+          "c": "iosFold",
+          "p": {
+            "title": "Teyla closed 3 questions",
+            "open": false,
+            "kids": []
+          }
+        },
+        {
+          "t": "v",
+          "name": "Only you",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "iosHeader",
+              "p": {
+                "title": "Only you"
+              }
+            },
+            {
+              "t": "use",
+              "c": "iosTaskRow",
+              "p": {
+                "kind": "merge",
+                "meta": "Quill · 4h",
+                "title": "Merge the reading-list import",
+                "detail": "Pull request 212 passed review."
+              }
+            },
+            {
+              "t": "use",
+              "c": "iosTaskRow",
+              "p": {
+                "kind": "checklist",
+                "meta": "Atlas · 1d",
+                "title": "Assign the Team plan price in the billing console",
+                "detail": "An issue is assigned to you."
+              }
+            }
+          ]
+        },
+        {
+          "t": "use",
+          "c": "iosFold",
+          "p": {
+            "title": "Done since yesterday · 6",
+            "open": false,
+            "kids": []
+          }
+        }
+      ]
+    }
+  }
+}

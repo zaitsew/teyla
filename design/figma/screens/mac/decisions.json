@@ -1,0 +1,330 @@
+{
+  "id": "mac.decisions",
+  "title": "Decisions",
+  "area": "mac",
+  "presentation": "tab",
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/UI/DecisionsView.swift:5",
+    "apps/mac/Teyla/UI/AskCard.swift:5"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macWindow",
+    "p": {
+      "selected": "decisions",
+      "badges": {
+        "today": 4,
+        "decisions": 4,
+        "operations": 1
+      },
+      "linked": [
+        "today",
+        "home",
+        "decisions",
+        "products",
+        "settings"
+      ],
+      "kids": [
+        {
+          "t": "v",
+          "w": 720,
+          "gap": 24,
+          "kids": [
+            {
+              "t": "use",
+              "c": "macPageHeader",
+              "p": {
+                "title": "Decisions",
+                "context": "4 decisions wait on you, best first."
+              }
+            },
+            {
+              "t": "v",
+              "w": "fill",
+              "gap": 12,
+              "kids": [
+                {
+                  "t": "use",
+                  "c": "macSection",
+                  "p": {
+                    "title": "Pay",
+                    "count": 1
+                  }
+                },
+                {
+                  "t": "use",
+                  "c": "macAsk",
+                  "p": {
+                    "product": "Atlas",
+                    "age": "3 h",
+                    "unblocks": "the paid plan launch",
+                    "question": "Renew the Atlas domain for another year?",
+                    "context": "The domain expires on 2 December. Renewing for one year costs $14.",
+                    "proposal": "Renew for one year, from the card on file.",
+                    "why": "A lapse would take the Atlas site offline the week of the launch.",
+                    "options": [],
+                    "canUseProposal": false
+                  }
+                }
+              ]
+            },
+            {
+              "t": "v",
+              "w": "fill",
+              "gap": 12,
+              "kids": [
+                {
+                  "t": "use",
+                  "c": "macSection",
+                  "p": {
+                    "title": "Decide",
+                    "count": 2
+                  }
+                },
+                {
+                  "t": "use",
+                  "c": "macAsk",
+                  "p": {
+                    "product": "Pebble",
+                    "age": "1 day",
+                    "unblocks": "build 14",
+                    "question": "Ship Pebble 1.4 to testers today, or wait for the sync fix?",
+                    "context": "The sync fix is merged but not reviewed. Testers on 1.3 still see duplicate entries.",
+                    "proposal": "Wait one day for the review, then ship both together.",
+                    "why": "The fix is small, and a second build costs the testers another update.",
+                    "options": [
+                      "Ship today",
+                      "Wait a day"
+                    ]
+                  }
+                },
+                {
+                  "t": "use",
+                  "c": "macAsk",
+                  "p": {
+                    "product": "Quill",
+                    "age": "2 days",
+                    "question": "Which name for the free plan?",
+                    "context": "The pricing page needs a final name before Friday's post.",
+                    "proposal": "Starter",
+                    "why": "It is the word the three testers who commented already used.",
+                    "options": [
+                      "Starter",
+                      "Free",
+                      "Lite"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "t": "v",
+              "w": "fill",
+              "gap": 12,
+              "kids": [
+                {
+                  "t": "use",
+                  "c": "macSection",
+                  "p": {
+                    "title": "Do",
+                    "count": 1
+                  }
+                },
+                {
+                  "t": "use",
+                  "c": "macAsk",
+                  "p": {
+                    "product": "Atlas",
+                    "age": "5 h",
+                    "unblocks": "two demos",
+                    "question": "Reply to the three demo requests from this week?",
+                    "context": "Three people asked for a demo after Tuesday's post. Two wrote yesterday.",
+                    "proposal": "Reply today with the booking link.",
+                    "why": "Replies first: they are conversations already started.",
+                    "options": []
+                  }
+                }
+              ]
+            },
+            {
+              "t": "use",
+              "c": "macFold",
+              "p": {
+                "title": "Older · 1",
+                "detail": "waiting more than 7 days"
+              }
+            },
+            {
+              "t": "use",
+              "c": "macFold",
+              "p": {
+                "title": "Teyla suggests closing 3"
+              }
+            },
+            {
+              "t": "use",
+              "c": "macBtn",
+              "p": {
+                "text": "Accept these 3"
+              }
+            },
+            {
+              "t": "use",
+              "c": "macFold",
+              "p": {
+                "title": "Agents can settle 3"
+              }
+            },
+            {
+              "t": "v",
+              "w": "fill",
+              "gap": 0,
+              "kids": [
+                {
+                  "t": "use",
+                  "c": "macSection",
+                  "p": {
+                    "title": "Only you"
+                  }
+                },
+                {
+                  "t": "h",
+                  "w": "fill",
+                  "gap": 12,
+                  "pad": [
+                    12,
+                    0
+                  ],
+                  "align": "start",
+                  "kids": [
+                    {
+                      "t": "v",
+                      "w": "fill",
+                      "gap": 4,
+                      "kids": [
+                        {
+                          "t": "h",
+                          "gap": 8,
+                          "align": "center",
+                          "kids": [
+                            {
+                              "t": "use",
+                              "c": "macChip",
+                              "p": {
+                                "text": "Merge",
+                                "tone": "primary"
+                              }
+                            },
+                            {
+                              "t": "text",
+                              "v": "Atlas · 2 h",
+                              "s": "mac-caption",
+                              "c": "text-secondary"
+                            }
+                          ]
+                        },
+                        {
+                          "t": "text",
+                          "v": "Merge the pricing page",
+                          "s": "mac-body",
+                          "c": "text",
+                          "weight": 600
+                        },
+                        {
+                          "t": "text",
+                          "v": "Review passed. Squash is off, so merge the branch.",
+                          "s": "mac-body",
+                          "c": "text-secondary",
+                          "w": "fill"
+                        }
+                      ]
+                    },
+                    {
+                      "t": "use",
+                      "c": "macBtn",
+                      "p": {
+                        "text": "Open"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "t": "h",
+                  "w": "fill",
+                  "gap": 12,
+                  "pad": [
+                    12,
+                    0
+                  ],
+                  "align": "start",
+                  "kids": [
+                    {
+                      "t": "v",
+                      "w": "fill",
+                      "gap": 4,
+                      "kids": [
+                        {
+                          "t": "h",
+                          "gap": 8,
+                          "align": "center",
+                          "kids": [
+                            {
+                              "t": "use",
+                              "c": "macChip",
+                              "p": {
+                                "text": "Check",
+                                "tone": "needs-you"
+                              }
+                            },
+                            {
+                              "t": "text",
+                              "v": "Pebble · 1 day",
+                              "s": "mac-caption",
+                              "c": "text-secondary"
+                            }
+                          ]
+                        },
+                        {
+                          "t": "text",
+                          "v": "Add the App Store privacy answers",
+                          "s": "mac-body",
+                          "c": "text",
+                          "weight": 600
+                        },
+                        {
+                          "t": "text",
+                          "v": "Three questions are still empty.",
+                          "s": "mac-body",
+                          "c": "text-secondary",
+                          "w": "fill"
+                        }
+                      ]
+                    },
+                    {
+                      "t": "use",
+                      "c": "macBtn",
+                      "p": {
+                        "text": "Open"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "t": "use",
+              "c": "macFold",
+              "p": {
+                "title": "Done since yesterday · 6"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
