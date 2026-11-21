@@ -58,6 +58,7 @@ ALLOWED = {
     "ux_judge.py": {25, 57},
     "scout_design.py": {26},
     "deps.py": {32},
+    "leak_guard.py": {60},
     "leak_published.py": {35},
     "leak_install.py": {36},
     "genai.py": {27, 28},

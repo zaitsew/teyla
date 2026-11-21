@@ -369,13 +369,16 @@ started. One with quoting is parsed word by word, so `g''h p''r` and `cred''enti
   with no text of its own has nothing to scan here; the merge itself is the owner's gate, outside Teyla.
 - **A push that skips the pre-push gate.** A plain `git push` is the pre-push hook's to scan and the guard leaves
   it alone. `git push --no-verify` (or any unambiguous prefix, such as `--no-ver`) and `git -c core.hooksPath=...
-  push` (also `--config-env=core.hooksPath=...`; the key is case-insensitive) turn that hook off, so the guard
-  scans the commits the push sends: every source ref the refspecs name (`src` of `+src:dst`; `HEAD` when none;
-  every ref for `--all`, `--mirror`, `--tags` or a glob; a `:dst` deletion sends nothing), minus what the
-  destination already has. A configured remote is compared with its own tracking refs. A URL, or a name git
-  does not know, has nothing yet, so the full history of the pushed refs is scanned. An omitted remote follows
-  git: `branch.<b>.pushRemote`, `remote.pushDefault`, `branch.<b>.remote`, else `origin`. `--dry-run` and `-n`
-  send nothing and pass. With no teyla to scan with, the bypass is refused like
+  push` (also `--config-env=...`; the key is case-insensitive) turn that hook off, so the guard asks git what
+  the push would send: `git <same -c options> push --dry-run --porcelain --no-verify <same arguments>` in the
+  command's directory, 30 seconds at most (`TEYLA_LEAK_GUARD_PUSH_TIMEOUT`). It contacts the same remote the push
+  would, sends nothing, and lets git apply its own rules (refspecs, `remote.<name>.push`, push remotes, push URLs,
+  URL rewrites, `--follow-tags`, `--all`, `--mirror`). For each ref git would update, the guard scans `old..new`;
+  for a new ref it scans the full history, unless the destination is exactly one configured remote (same fetch and
+  push URL, no URL rewrite anywhere) and then it skips what that remote's tracking refs hold. The tagger and
+  message of each annotated tag that would be sent are scanned too. Deletions, up-to-date and rejected refs send
+  nothing. A dry run that fails or times out is a refusal. `--dry-run` and `-n` pass. With no teyla to scan with,
+  the bypass is refused like
   any publication. `TEYLA_LEAK_GUARD=0` skips it once, on the record.
 - **Credential paths.** `~/.ssh/id_*` (not `.pub`), `~/.aws/credentials`, the private-terms list (and the file
   `$TEYLA_PRIVATE_TERMS` names), `~/.appstoreconnect/`, `~/.grok/config.toml`, `~/.codex/auth.json` and
