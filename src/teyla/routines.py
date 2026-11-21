@@ -159,8 +159,13 @@ def parse_manifest(path: pathlib.Path) -> dict:
     if "name" not in product:
         raise ManifestError(f"{path}: [product] is missing required key 'name'")
 
-    routines = data.get("routine") or []
-    for r in routines:
+    routines = []
+    placeholders = []
+    for r in data.get("routine") or []:
+        if is_template_placeholder(r):
+            placeholders.append(r["name"])   # the routine `teyla init` writes; nobody scheduled it
+            continue
+        routines.append(r)
         if "paused" in r:
             _check_paused(path, r)
         if _is_control_routine(r):
@@ -200,7 +205,8 @@ def parse_manifest(path: pathlib.Path) -> dict:
             raise ManifestError(f"{path}: check {c['name']!r} has unknown status {shown!r} — status is exactly one of "
                                 f"ok, broken, untested; put what was seen in `note = \"...\"` and the date in `confirmed`")
 
-    return {"path": path, "repo": path.parent, "product": product, "routines": routines, "checks": checks}
+    return {"path": path, "repo": path.parent, "product": product, "routines": routines, "checks": checks,
+            "placeholders": placeholders}
 
 
 # --- control-plane routines ----------------------------------------------------
@@ -209,6 +215,19 @@ def parse_manifest(path: pathlib.Path) -> dict:
 # from it: to not choke on its manifest shape, and to show the last receipt outcome
 # next to the row. Both are done through narrow, failure-tolerant helpers rather than
 # a hard import, so `teyla routines` keeps working if the control plane is absent.
+
+PLACEHOLDER_NAME = "example"
+PLACEHOLDER_MARK = "replace me"
+
+
+def is_template_placeholder(r) -> bool:
+    """The `example` routine the repo template writes (templates/repo/teyla.toml): a control-plane routine whose
+    draft step still says "replace me". It is a worked example, not a job anyone scheduled, so it is never
+    reported as unregistered or vanished. Once the step is edited it is a real routine and is judged as one."""
+    if not (isinstance(r, dict) and r.get("name") == PLACEHOLDER_NAME and isinstance(r.get("step"), dict)):
+        return False
+    return PLACEHOLDER_MARK in str(r["step"].get("run", ""))
+
 
 def _is_control_routine(r: dict) -> bool:
     return isinstance(r, dict) and isinstance(r.get("step"), dict)
@@ -522,7 +541,8 @@ def evaluate(manifest: dict, *, now: dt.datetime | None = None) -> dict:
         })
 
     return {"product": manifest["product"].get("name", manifest["repo"].name),
-            "repo": str(manifest["repo"]), "routines": routine_rows, "checks": check_rows}
+            "repo": str(manifest["repo"]), "routines": routine_rows, "checks": check_rows,
+            "placeholders": list(manifest.get("placeholders") or [])}
 
 
 def evaluate_all(paths: list[str] | None = None) -> list[dict]:
@@ -757,6 +777,8 @@ def render_text(reports: list[dict]) -> str:
                     lines.append(f"  {_trunc(row['name'])}: {row['detail']}")
         else:
             lines.append("  (no routines declared)")
+        for ph in r.get("placeholders") or []:
+            lines.append(f"  {ph} (template placeholder, ignored)")
         if r["checks"]:
             lines.append("")
             rows = [[_trunc(row["name"]), row["status"], row["confirmed"], str(row["age_days"]), row["verdict"]]
