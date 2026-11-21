@@ -48,3 +48,9 @@ tests/test_platform.py
 tests/test_asks.py
 # fixtures that look like a password assignment, to test the leak scanner itself
 tests/test_leak.py
+# the tester-report scrubber tests and their shared vectors: fake `sk_live_` keys, to prove each
+# platform redacts them before a report leaves the device
+packages/review-web/tests/scrub.test.ts
+packages/review-ios/Tests/TeylaReviewTests/ReviewScrubTests.swift
+packages/review-android/teyla-review/src/test/kotlin/teyla/review/ScrubTest.kt
+packages/review-channel/test-vectors/scrub.json
