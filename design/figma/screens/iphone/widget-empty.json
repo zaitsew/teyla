@@ -1,0 +1,20 @@
+{
+  "id": "iphone.widget-empty",
+  "title": "Widget · before the first update",
+  "area": "iphone",
+  "presentation": "overlay",
+  "device": {
+    "w": 170,
+    "h": 170
+  },
+  "source": [
+    "apps/ios/TeylaWidget/ActivityWidget.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosWidget",
+    "p": {
+      "family": "empty"
+    }
+  }
+}

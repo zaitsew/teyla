@@ -49,4 +49,11 @@ packages = ["src/teyla"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["docs: the module reads a tracked document; ./check.sh docs runs these (tests/conftest.py)"]
+# A hung test dumps every thread's stack after 120 s (pytest-timeout is not a dependency); --strict-markers
+# makes a misspelled marker an error.
+faulthandler_timeout = 120
+addopts = "--strict-markers"
+markers = [
+    "docs: the module reads a tracked document; ./check.sh docs runs these (tests/conftest.py)",
+    "real_process_calls: the test deliberately reaches a real os.kill, osascript, killall, pkill or launchctl write (opts out of the guard in tests/conftest.py)",
+]

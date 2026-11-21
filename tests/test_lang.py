@@ -169,6 +169,14 @@ def test_localization_paths_are_exempt_by_default(env):
     assert [f["path"] for f in rep["files"]] == ["src/real.py"] and rep["exempt"] == 10
 
 
+def test_single_files_that_hold_ui_copy_are_exempt_by_default(env):
+    files = {p: f"export const t = '{RU}'\n" for p in ("src/i18n.ts", "web/locales.js", "app/strings.ts", "i18n.json")}
+    files["src/real.py"] = f"# {RU}\n"
+    repo = make_repo(env.code, "app", files)
+    rep = lang.scan_repo(repo)
+    assert [f["path"] for f in rep["files"]] == ["src/real.py"] and rep["exempt"] == 4
+
+
 def test_android_resource_qualifiers_and_string_catalogs_are_exempt_by_default(env):
     xml = f'<resources><string name="title">{RU}</string></resources>\n'
     files = {p: xml for p in (

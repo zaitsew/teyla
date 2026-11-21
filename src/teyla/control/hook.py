@@ -76,6 +76,8 @@ def main(stdin=None, stderr=None) -> int:
         if live:
             print("teyla: a run is active but this session has no grants.\n"
                   f"  in flight: {', '.join(live)}\n"
+                  f"  markers:   {S.active_runs_dir()}/<run id> (a marker with no live process is removed on the\n"
+                  f"             next call; to clear one by hand: rm {S.active_runs_dir()}/{live[0]})\n"
                   "  A tool call with no TEYLA_GRANTS while a routine is running cannot be told\n"
                   "  apart from a routine escaping its own grants, so it is refused. Wait for the\n"
                   "  run to finish, or stop it with: teyla kill on --reason \"...\"",
@@ -151,4 +153,5 @@ def _detail(tool_name: str, tool_input: dict) -> str:
 
 
 if __name__ == "__main__":  # pragma: no cover - exercised through the sh wrapper
-    sys.exit(main())
+    # `--probe` only proves the package imports: the wrapper asks it of a bare python3 before trusting it.
+    sys.exit(0 if sys.argv[1:] == ["--probe"] else main())

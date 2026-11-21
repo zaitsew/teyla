@@ -18,11 +18,16 @@ sed -i '' "s/^version = \".*\"/version = \"$v\"/" pyproject.toml
 sed -i '' "s/^__version__ = \".*\"/__version__ = \"$v\"/" src/teyla/__init__.py
 sed -i '' "s/\"version\": \".*\"/\"version\": \"$v\"/" plugin/.claude-plugin/plugin.json
 sed -i '' "s/^| Version | .* |$/| Version | $v |/" docs/DIRECTORY.md   # the listing pack quotes the manifest's version
+# The install lines of the quick start name the release tag, so a stranger gets the release `teyla update` follows
+# and not whatever main holds. The tag itself is pushed below, after the bump merges.
+sed -i '' -E "s#(git\+https://github\.com/zaitsew/teyla)(@v[0-9][0-9.]*)?([^A-Za-z0-9@/._-]|$)#\1@v$v\3#g" \
+  README.md AGENTS.md docs/GUIDE.md site/public/index.html
 # The apps carry the release version too, so TestFlight and the Mac show the same number as the CLI.
 # Build numbers (CURRENT_PROJECT_VERSION) stay a separate, per-upload bump.
 sed -i '' -E "s/^( +CFBundleShortVersionString: )\"[^\"]*\"/\\1\"$v\"/" apps/ios/project.yml apps/mac/project.yml
 git checkout -q -b "release-$v"
 git add pyproject.toml src/teyla/__init__.py plugin/.claude-plugin/plugin.json docs/DIRECTORY.md \
+  README.md AGENTS.md docs/GUIDE.md site/public/index.html \
   apps/ios/project.yml apps/mac/project.yml
 git commit -q -m "release $v"
 git push -q -u origin "release-$v"

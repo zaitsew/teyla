@@ -123,7 +123,12 @@ def _schedule_detail(e: dict, now: dt.datetime) -> str:
     if e.get("last_exit") not in (None, 0):
         bits.append(f"last exit {e['last_exit']}")
     bits.append(str(e.get("note") or "").split(" — ")[0].strip().rstrip("."))
-    return ". ".join(b[:1].upper() + b[1:] for b in bits if b) + "."
+    seen, kept = set(), []
+    for b in bits:    # the schedules note can repeat a reason already given ("last exit 1" twice)
+        if b and b.lower() not in seen:
+            seen.add(b.lower())
+            kept.append(b)
+    return ". ".join(b[:1].upper() + b[1:] for b in kept) + "."
 
 
 def _problems_file_items(now: float) -> list[dict]:

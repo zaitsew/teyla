@@ -51,6 +51,8 @@ class Pack:
     quiet_when_unchosen: dict = dataclasses.field(default_factory=dict)
     # Its problem can take the Mac down, so a pack that is only partly on reminds too; any other reminds only while off.
     acute: bool = False
+    # Its offers price the sessions already written, so it has nothing to say on a Mac with no history.
+    needs_history: bool = False
 
 
 PACKS: tuple[Pack, ...] = (
@@ -58,7 +60,7 @@ PACKS: tuple[Pack, ...] = (
          "Long sessions re-read their whole context every turn, and subagents run on the top model.",
          "Compacts earlier, runs subagents on Sonnet and reading on Haiku, writes a handoff at 240k tokens.",
          ("teyla spend --days 7", "teyla lanes", "teyla models"),
-         offers=("O1", "O2", "O3", "O4"), switches={"hooks.context_budget": True}, plugin=True),
+         offers=("O1", "O2", "O3", "O4"), switches={"hooks.context_budget": True}, plugin=True, needs_history=True),
     Pack("load", "Machine guard", AUTO,
          "Parallel agents boot simulators and builds until the Mac swaps, hangs or panics.",
          "Admits one heavy job at a time, holds new ones while memory is critical, records load every minute.",
@@ -105,6 +107,13 @@ PACKS: tuple[Pack, ...] = (
          ("teyla prose", "teyla voice check <draft>", "teyla docs check <repo>", "teyla lang <repo>", "teyla copy")),
 )
 BY_ID = {p.id: p for p in PACKS}
+
+
+def history_free_text() -> str:
+    """For `teyla start` on a machine with no sessions yet: the packs that work without history, and where to pick them."""
+    names = ", ".join(f"{p.title} ({p.id})" for p in PACKS if not p.needs_history)
+    return (f"These packs need no session history and work today: {names}.\n"
+            "See what each does: `teyla features`. Turn one on: `teyla features on <pack>`.")
 OFFER_PACK = {o: p.id for p in PACKS for o in p.offers}
 
 
