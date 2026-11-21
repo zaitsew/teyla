@@ -1,0 +1,25 @@
+{
+  "id": "review-form.android-point",
+  "title": "Review form, Android: Pick a spot",
+  "area": "review-form",
+  "presentation": "push",
+  "device": {
+    "w": 412,
+    "h": 892
+  },
+  "source": [
+    "packages/review-android/teyla-review/src/main/kotlin/teyla/review/ReviewFlow.kt:144",
+    "packages/review-android/teyla-review/src/main/kotlin/teyla/review/ReviewStrings.kt:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "reviewAndroid",
+    "p": {
+      "step": "point",
+      "mark": "none",
+      "links": {
+        "next": "review-form.android-comment"
+      }
+    }
+  }
+}

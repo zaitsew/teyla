@@ -1,0 +1,111 @@
+{
+  "id": "iphone.decisions",
+  "title": "Decisions",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/DecisionsView.swift:6",
+    "apps/ios/Teyla/UI/DecisionsView.swift:46",
+    "apps/ios/Teyla/UI/Cards.swift:5"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {
+        "decisions": 6
+      },
+      "title": "Decisions",
+      "tab": "decisions",
+      "kids": [
+        {
+          "t": "text",
+          "v": "6 decisions wait on you, best first.",
+          "s": "ios-body",
+          "c": "ios-label-2",
+          "w": "fill"
+        },
+        {
+          "t": "v",
+          "name": "Pay",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "iosHeader",
+              "p": {
+                "title": "Pay",
+                "count": 1
+              }
+            },
+            {
+              "t": "use",
+              "c": "iosQuestionCard",
+              "p": {
+                "product": "Atlas",
+                "age": "2d",
+                "unblocks": "the Team plan launch",
+                "pay": true,
+                "question": "Renew the error-tracking plan for Atlas at $29 a month?",
+                "context": "The plan renews on 24 Nov. Atlas sent 3 events last month. Cancelling stops the alerts that page the agents.",
+                "proposed": "Cancel the plan. The free tier covers 5,000 events.",
+                "why": "Teyla read the usage: 3 events in 30 days.",
+                "options": [
+                  "Renew",
+                  "Cancel"
+                ],
+                "links": {
+                  "chip": "iphone.decisions-answering"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "name": "Decide",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "iosHeader",
+              "p": {
+                "title": "Decide",
+                "count": 3
+              }
+            },
+            {
+              "t": "use",
+              "c": "iosQuestionCard",
+              "p": {
+                "product": "Atlas",
+                "age": "2d",
+                "unblocks": "the trial change",
+                "question": "Should the trial end on the Team plan or the Solo plan?",
+                "context": "Today a trial ends on Solo, and 31% of trials that invited a teammate lose that seat. Team keeps every invited seat for 14 days.",
+                "proposed": "Team plan, so a trial keeps every seat it invited.",
+                "why": "Seats lost at trial end: 31% in the last 30 days.",
+                "options": [
+                  "Team plan",
+                  "Solo plan"
+                ],
+                "links": {
+                  "use": "iphone.decisions-sent",
+                  "chip": "iphone.decisions-answering"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

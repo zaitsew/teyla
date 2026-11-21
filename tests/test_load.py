@@ -1050,6 +1050,13 @@ def test_worsening_trips_on_each_signal_alone_and_not_on_a_flat_history():
     assert v3.level == "WORSENING" and "disk 17.5 GB free and falling" in v3.reasons[0] and "under the 8 GB critical line" in v3.reasons[0]
     assert "on this trend full in 15 min" in v3.reasons[0]                              # the slope runs past zero: full, not "-27.5 GB"
     assert load._disk_ahead(6.04) == "6.0 GB free" and load._disk_ahead(-3.8) == "full" and load._disk_ahead(0.0) == "full"
+    lines = load.trend_lines(load.compute_trend(fall, s3, {}), {})
+    assert any("disk forecast: full in 15 min at the current rate" in ln for ln in lines)   # a forecast, not a reading
+    text = load.render(s3, v3, load.compute_trend(fall, s3, {}), {})
+    assert "disk: 17.5 GB free now" in text
+    s4 = now_snap(15, swap_gb=7.0, swap_total_bytes=9 * GIB)
+    mem = load.render(s4, load.assess(s4, {}), None, {}).split("memory: ")[1].splitlines()[0]
+    assert "swap 7.0 GB (" in mem and "% of RAM)" in mem and "of 9.0 GB" not in mem      # one swap format: used, then % of RAM
     out = load.compute_trend([hist_row(14, swapout=0)], now_snap(swapout=30 * 1024 ** 2 * 60), {})
     assert load.assess(now_snap(), {}, out).reasons == ["swap-out 30 MB/s over the last 3 min (worsening ≥ 20 MB/s)"]
     assert load.assess(now_snap(), {"swapout_mb_s": 0}, out).level == "OK"             # 0 = off
@@ -1624,3 +1631,32 @@ def test_guard_cwd_defaults_to_here_and_resolves(tmp_path, monkeypatch):
     assert load._guard_cwd(str(tmp_path)) == here
     assert load._guard_cwd("") == ""          # the hook's unknown stays unknown, never "here"
     assert load._guard_cwd("~") == os.path.realpath(os.path.expanduser("~"))
+
+
+def test_an_active_hold_is_the_verdict_line_and_exits_1(capsys, monkeypatch):
+    # The machine reads OK, but a WORSENING sample 1 min ago holds new builds for 2 more minutes: the first line
+    # used to say "load: OK" (exit 0) above "hold: WORSENING ... wait 2 more min".
+    held = load.Trend(held_level="WORSENING", held_ago_s=60, hold_s=180, points=5, span_s=300)
+    monkeypatch.setattr(load, "current_trend", lambda snap, conf: held)
+    calm = Machine(sysctl_text())
+    calm.add(1, "/bin/ls")
+    assert load.cmd_load(args(), run=calm.run) == 1
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "load: HOLD — builds and simulators wait 2 min (after WORSENING 1 min ago)"
+    assert any(ln.startswith("hold: WORSENING 1 min ago") for ln in out)
+    # --json keeps the machine's own level (scripts that read it keep working), exit 0, and adds the hold.
+    assert load.cmd_load(args(json=True), run=calm.run) == 0
+    v = json.loads(capsys.readouterr().out)["verdict"]
+    assert v["level"] == "OK" and v["hold"] == {"level": "WORSENING", "left_min": 2}
+    # No hold: the line and the exit code are what they were.
+    monkeypatch.setattr(load, "current_trend", lambda snap, conf: load.Trend())
+    assert load.cmd_load(args(), run=calm.run) == 0
+    assert capsys.readouterr().out.splitlines()[0] == "load: OK"
+
+
+def test_a_verdict_that_is_already_bad_is_not_relabelled_by_the_hold():
+    held = load.Trend(held_level="CRITICAL", held_ago_s=0, hold_s=180)
+    bad = load.Verdict(load.CRITICAL, ["swap 11.7 GB"], 1)
+    assert load.with_hold(bad, held) is bad
+    busy = load.with_hold(load.Verdict(load.BUSY, ["load 5.0 per core"], 0), held)
+    assert busy.level == "HOLD" and busy.reasons[1:] == ["load 5.0 per core"] and busy.exit_code == 1

@@ -44,7 +44,7 @@ If the product has a voice mode, tell the package: `TeylaReview.configure { $0.h
 | Artifact | Checks |
 |---|---|
 | `.xcarchive` (every `Products/Applications/*.app`), `.app`, `.ipa`, `.pkg` (a Mac export) | Info.plist `TeylaReviewEnabled` is absent or off by the package's own rule (`parseEnabled`: `YES`, `true`, `1` are on); `TeylaReviewChannelKey` and `TeylaReviewChannelURL` are absent or empty; the main executable and the embedded frameworks do not contain the marker `TEYLA_REVIEW_IOS_ACTIVE`. A Mac bundle keeps its plist at `Contents/Info.plist` and its executable in `Contents/MacOS`; both layouts are read, for a `.app` and for an `.xcarchive`. A `.pkg` is expanded with `pkgutil --expand-full` into a temporary folder (macOS only; without `pkgutil` the check exits 2) and every `.app` in it is checked the same way |
-| `.aab`, `.apk` | no `.dex` file contains the bytes `teyla/review/ReviewOverlay` |
+| `.aab`, `.apk` | no `.dex` file contains the bytes `teyla/review/ReviewOverlay`, and none contains the channel markers: the `BuildConfig` field names `TEYLA_REVIEW_KEY` and `TEYLA_REVIEW_URL` that the Android README prescribes for the channel key and URL, or the client's request path `/v1/captures/`. The check reads names and never a value, so a key a product stores under another name, in a string it built itself, is not found. Android keeps no Info.plist: the dex is where its key lives |
 | a folder (a web `dist`) | no file contains `TEYLA_REVIEW_WEB_ACTIVE` |
 
 The Swift marker is a string in `Core/ReviewMarker.swift` that exists only under `#if TEYLA_REVIEW`. `TeylaReview.present()` stores it, so a release build keeps it through dead stripping whenever the product calls the entry point (a product does, from `ReviewMenuButton`). `tests/test_review_marker.py` builds a tiny executable that links the package, in release mode, and checks both directions: the marker is in the binary with the overlay compiled in, and absent with `TEYLA_REVIEW=0`. Measured on 2026-11-04, `swift build -c release` for macOS (dead stripping on): the probe holds the marker with the overlay compiled in and does not hold it with `TEYLA_REVIEW=0`, so stripping works. The probe links the macOS overlay; an iOS archive is checked by `store-check` the same way. The marker is longer than 15 bytes on purpose, because Swift keeps shorter strings inline and they leave nothing to find. A minified Android build (R8) may rename the overlay class, which would hide it from the dex check, so the real Android module ships a consumer `-keep` rule for it; `tests/test_review_android_build.py` builds a fixture app with R8 on and proves the marker is in the `internal` dex and absent from `release`.
@@ -106,7 +106,7 @@ Keys are snake_case. A key that is absent means the value is unknown; `null` is 
 | `app.name` | string, optional | Display name |
 | `app.version`, `app.build` | strings | `CFBundleShortVersionString`, `CFBundleVersion` |
 | `app.commit` | string, optional, 7 to 40 lowercase hex | From the Info.plist key `TeylaCommit`. Absent when the product does not set it |
-| `app.product` | string, optional, `^[a-z][a-z0-9-]{0,39}$` | The product's slug. The Mac files the capture under it. Absent: the last part of `app.bundle_id`. A web build has a hostname for a bundle id, so it sends this |
+| `app.product` | string, optional, `^[a-z][a-z0-9-]{0,39}$` | The product's slug. The Mac files the capture under it. When the product sets none, the iOS and Mac package fills it with the last part of `app.bundle_id` (lower case, other characters turned into `-`; `com.example.SampleApp` gives `sampleapp`), and sends an older capture that has none the same way. The channel's key is bound to this value, so a product with a key sets it itself. A web build has a hostname for a bundle id, so it sends this |
 | `app.configuration` | `debug`, `testflight`, `local`, `play_internal` or `test_host` | How the build reached the tester: a development build, TestFlight, an ad hoc install, a Play internal track, or a web page on a test host. A store build never captures |
 | `environment.os` | string | `iOS 19.1` |
 | `environment.model` | string | Hardware identifier, `iPhone16,2` |
@@ -280,6 +280,25 @@ A test build can also say which parts of the app get used, so a design pick can 
 
 Both reach the same inbox as a phone capture.
 
+## What is scrubbed
+
+The picture can be masked by region; the text cannot be masked by eye. So every text field of a capture goes through one set of scrub rules **on the device, before the capture is written, signed or sent**, and the channel applies the same rules again before it stores a capture (a backstop for an old or patched build). The comment, `tap.accessibility_label` (cut to 200 characters), `tap.accessibility_identifier`, `screen`, and every anchor's and the element's `id`, `screen`, `parent` and `strings` are scrubbed. A value is scrubbed first and cut afterwards, so a cut never leaves half a secret.
+
+| Rule | Replaced by |
+|---|---|
+| E-mail addresses | `[email]` |
+| Phone numbers: `+` and 8 to 15 digits, or any run of 9 to 15 digits with spaces, dots, hyphens or brackets (an ISO date `2026-11-20` is not one) | `[phone]` |
+| Payment card numbers: 13 to 19 digits, spaces or hyphens allowed, passing the Luhn check | `[card]` |
+| IBANs: two letters, two digits, then groups of letters and digits | `[iban]` |
+| `Bearer <token>` (12 or more characters) | `Bearer [token]` |
+| Keys with a well-known prefix: `sk-`, `sk_live_`, `pk_`, `rk_`, `ghp_`-style GitHub tokens, Slack `xox*-`, AWS `AKIA`, Google `AIza` | `[token]` |
+| JWTs: `eyJ` header, then two more base64url segments | `[token]` |
+| The value of a URL parameter whose name contains `token`, `key`, `secret`, `password`, `passwd`, `pwd`, `auth`, `code` or `sig` | `[token]` |
+
+The rules run in that order and never match a placeholder, so a second pass changes nothing. They err towards removing: a plain run of 9 or more digits (an order number, a timestamp in milliseconds) becomes `[phone]`. They do not find a name, an address or a secret with no recognisable shape; the picture mask and `.reviewPrivate()` stay the tools for those.
+
+One file, `packages/review-channel/test-vectors/scrub.json`, holds the cases (input and expected output, generic fake data only). The Swift (`ReviewScrub.swift`), TypeScript (`scrub.ts`), Kotlin (`Scrub.kt`) and Python (`packages/review-channel/server.py`) test suites all read it, so the four implementations are proven to agree. Change a rule in all four and in that file together.
+
 ## Privacy
 
 **What the owner sees.** Opening review mode shrinks the frozen app into a framed picture with a "Review mode" label, so it never reads as a hang. Step 1: tap a spot or circle an area, or go on about the whole screen. Step 2: write, or dictate when `speech` is on. The picture shrinks again for the keyboard. Step 3: the overlay says whether the capture was sent or only saved on this phone. A product translates the words with `$0.strings`.
@@ -287,6 +306,7 @@ Both reach the same inbox as a phone capture.
 **What the tester sees before a capture leaves the phone.**
 - **First-send notice.** The first time a tester presses Send in a build that can reach a server (a `deliver` closure or the channel keys), a dialog says what is sent (the picture of the screen, the comment, the app's name and build, the device class and system, the element pointed at), who receives it (the developer, through a review server), why, and how long it is kept: the server copy is gone within the hour, the owner's Mac copy 30 days after the report is closed and 90 days if it is never opened. OK sends; Cancel sends and saves nothing. The answer is kept once per install. The words are `ReviewStrings.notice*`, English by default. The 30 and 90 day limits are the policy the notice states; this package does not delete anything on the Mac.
 - **The picture.** The overlay shows the frozen screen throughout, and that picture is the exact PNG that is saved and sent. A caption above Send says so.
+- **Secure fields are masked without a mark** (as on the web). A secure text field (SwiftUI `SecureField`, `UITextField` and `UITextView` with `isSecureTextEntry`, `NSSecureTextField`) and a field with the password, new-password, one-time-code or credit-card content type are painted black in every picture, and a tap on one records no element, like a `.reviewPrivate()` area. Android does the same for password and number-password input types, password, card and one-time-code autofill hints, a classic `TextView` that hides its text, and a Compose field with `password` semantics. A field that is none of these (a custom view, a plain text field that holds a card number) still needs `.reviewPrivate()` or `Modifier.reviewPrivate()`.
 - **`.reviewPrivate()`.** A SwiftUI modifier that hides a view from every capture: its frame, as of the moment the picture is taken, plus a 2 pt margin, is painted black in the PNG before the overlay shows it and before it is hashed, saved or sent. Use it on other people's names and messages, and on health values. It registers like `.reviewAnchor`; it does nothing in a build with review mode off. A tap or circle that touches a masked area records no `element`, no `tap.accessibility_identifier` and no `tap.accessibility_label`; a view that overlaps a masked area lends no label or identifier to a nearby tap; and an anchor that overlaps one loses its `strings`. Anchor ids, roles, bounds and source lines stay: they are the developer's names and geometry. A comment is whatever the tester types.
 - **Health consent.** `TeylaReview.configure { $0.requiresHealthConsent = true }` adds a checkbox (`strings.healthConsent`) that must be ticked before Send is enabled. It is asked for each capture.
 - **The comment is never logged.** The comment is a tester's text; the package does not print or log it.

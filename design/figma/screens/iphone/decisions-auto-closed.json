@@ -1,0 +1,180 @@
+{
+  "id": "iphone.decisions-auto-closed",
+  "title": "Decisions · Teyla closed",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/DecisionsView.swift:217"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {
+        "decisions": 6
+      },
+      "title": "Decisions",
+      "large": false,
+      "tab": "decisions",
+      "kids": [
+        {
+          "t": "use",
+          "c": "iosFold",
+          "p": {
+            "title": "Teyla closed 3 questions",
+            "open": true,
+            "kids": [
+              {
+                "t": "v",
+                "name": "Closed row",
+                "w": "fill",
+                "gap": 8,
+                "pad": [
+                  0,
+                  0,
+                  0,
+                  16
+                ],
+                "kids": [
+                  {
+                    "t": "text",
+                    "v": "Should Pebble add a widget this month?",
+                    "s": "ios-body",
+                    "c": "ios-label",
+                    "w": "fill"
+                  },
+                  {
+                    "t": "text",
+                    "v": "Pebble · Answered in the session on 17 Nov",
+                    "s": "ios-caption",
+                    "c": "ios-label-2",
+                    "w": "fill"
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosButton",
+                    "p": {
+                      "label": "Undo",
+                      "kind": "bordered",
+                      "size": "large"
+                    }
+                  }
+                ]
+              },
+              {
+                "t": "v",
+                "name": "Closed row",
+                "w": "fill",
+                "gap": 8,
+                "pad": [
+                  0,
+                  0,
+                  0,
+                  16
+                ],
+                "kids": [
+                  {
+                    "t": "text",
+                    "v": "Use the new icon for Quill?",
+                    "s": "ios-body",
+                    "c": "ios-label",
+                    "w": "fill"
+                  },
+                  {
+                    "t": "text",
+                    "v": "Quill · The build with the new icon shipped",
+                    "s": "ios-caption",
+                    "c": "ios-label-2",
+                    "w": "fill"
+                  },
+                  {
+                    "t": "h",
+                    "gap": 8,
+                    "align": "center",
+                    "kids": [
+                      {
+                        "t": "icon",
+                        "n": "progress.indicator",
+                        "size": 13,
+                        "c": "ios-label-2"
+                      },
+                      {
+                        "t": "text",
+                        "v": "Waiting for the Mac",
+                        "s": "ios-body",
+                        "c": "ios-label-2"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "t": "v",
+                "name": "Closed row",
+                "w": "fill",
+                "gap": 8,
+                "pad": [
+                  0,
+                  0,
+                  0,
+                  16
+                ],
+                "kids": [
+                  {
+                    "t": "text",
+                    "v": "Move the Atlas docs to a new folder?",
+                    "s": "ios-body",
+                    "c": "ios-label",
+                    "w": "fill"
+                  },
+                  {
+                    "t": "text",
+                    "v": "Atlas · The folder no longer exists",
+                    "s": "ios-caption",
+                    "c": "ios-label-2",
+                    "w": "fill"
+                  },
+                  {
+                    "t": "h",
+                    "w": "fill",
+                    "gap": 6,
+                    "align": "start",
+                    "kids": [
+                      {
+                        "t": "icon",
+                        "n": "exclamationmark.triangle.fill",
+                        "size": 15,
+                        "c": "danger"
+                      },
+                      {
+                        "t": "text",
+                        "v": "The Mac could not reopen this question",
+                        "s": "ios-body",
+                        "c": "danger",
+                        "w": "fill"
+                      }
+                    ]
+                  },
+                  {
+                    "t": "use",
+                    "c": "iosButton",
+                    "p": {
+                      "label": "Dismiss and try again",
+                      "kind": "text"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

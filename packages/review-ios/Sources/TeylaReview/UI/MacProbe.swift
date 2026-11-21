@@ -78,7 +78,7 @@ enum MacProbe {
         }
 
         let window0 = CGRect(origin: .zero, size: bounds.size)
-        let masks = ReviewMasking.rects(for: PrivateRegistry.shared.snapshot(), in: window0, scale: CGFloat(scale))
+        let masks = ReviewMasking.rects(for: PrivateRegistry.shared.snapshot() + sensitiveFrames(under: content), in: window0, scale: CGFloat(scale))
         var background = CGColor(red: 1, green: 1, blue: 1, alpha: 1)
         window.effectiveAppearance.performAsCurrentDrawingAppearance {
             if let srgb = NSColor.windowBackgroundColor.usingColorSpace(.sRGB) { background = srgb.cgColor }
@@ -95,8 +95,31 @@ enum MacProbe {
         let previous = MacCapture.window
         MacCapture.window = window
         defer { MacCapture.window = previous }
-        return ReviewMasking.rects(for: PrivateRegistry.shared.snapshot(),
+        return ReviewMasking.rects(for: PrivateRegistry.shared.snapshot() + sensitiveFrames(under: content),
                                    in: CGRect(origin: .zero, size: content.bounds.size), scale: CGFloat(scale))
+    }
+
+    /// Secure text fields (a SwiftUI `SecureField` is an `NSSecureTextField`) and fields with a password,
+    /// one-time-code or card content type: masked in every picture without the product asking, like the web
+    /// package's password, card and one-time-code inputs. Frames are in window points from the top left of the content.
+    static func sensitiveFrames(under content: NSView) -> [CGRect] {
+        var found: [CGRect] = []
+        func walk(_ view: NSView) {
+            guard !view.isHidden, view.alphaValue > 0.01 else { return }
+            if isSensitive(view) {
+                let inContent = view.convert(view.bounds, to: content)
+                found.append(MacGeometry.topLeft(inContent, containerHeight: content.bounds.height, flipped: content.isFlipped))
+            }
+            view.subviews.forEach(walk)
+        }
+        walk(content)
+        return found
+    }
+
+    static func isSensitive(_ view: NSView) -> Bool {
+        if view is NSSecureTextField { return true }
+        guard let field = view as? NSTextField, let type = field.contentType else { return false }
+        return [NSTextContentType.password, .newPassword, .oneTimeCode, .creditCardNumber, .creditCardSecurityCode].contains(type)
     }
 
     // MARK: what is under a click

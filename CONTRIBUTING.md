@@ -5,6 +5,15 @@
 - New adapters: implement `NAME`, `DEFAULT_ROOT`, `load()` in `src/teyla/adapters/<harness>.py`; raise `FileNotFoundError` when the store is absent; never read credentials files; add a synthetic fixture test.
 - New advice rules: one function block in `advise.py` with an id, a severity, an evidence line built from numbers in the metrics dict, and one imperative action. If you cannot point at a number, it is not a rule.
 - Nothing in this repo sends data anywhere. Keep it that way.
+- The install lines in `README.md`, `AGENTS.md`, `docs/GUIDE.md` and `site/public/index.html` name the release tag (`...teyla@v0.58.1`). Do not edit it by hand: `scripts/release.sh <version>` rewrites it with the version, and `tests/test_readme.py` fails when a line names another tag.
+- Tests run behind an autouse guard (`tests/conftest.py`): the real `os.kill`, an app quit, `osascript`, `killall`, `pkill` and a `launchctl` write raise, so inject a fake; `@pytest.mark.real_process_calls` opts one test out. A test that runs longer than 120 s dumps every thread's stack (`faulthandler_timeout`), and an unregistered marker is an error (`--strict-markers`).
+
+## Releasing
+
+- Write the notes first: each change adds a bullet at the top of "## Unreleased" in `CHANGELOG.md`.
+- `scripts/release.sh <version>` does the rest. It runs from a temporary clean worktree at `origin/main`, so a dirty or non-`main` checkout neither blocks it nor leaks into it, and it removes the worktree at the end.
+- It moves "## Unreleased" into a new `## <version> — <date>` heading and leaves an empty "## Unreleased" above it. An empty section is refused.
+- It then bumps the version strings, merges the bump PR (merge, never squash), tags and creates the GitHub release.
 
 ## Keeping the public repo clean
 

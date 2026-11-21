@@ -67,7 +67,9 @@ The picture shows the screen as the tester saw it, so it can show another person
 
 **Backup.** The queue lives in `noBackupFilesDir`, so Auto Backup never carries a queued report off the device.
 
-**Password fields are not detected.** Compose has no password type that the library can see from outside, so a `PasswordVisualTransformation` field, a card field or a one-time-code field is **not** masked unless the product marks it with `reviewPrivate()`. Mark every one of them. (A classic `View` password field is not covered either; this package is for Compose screens.)
+**Password fields are masked without a mark.** When the picture is taken, the library reads the window and masks every visible classic `TextView` with a password or number-password input type, a password, card or one-time-code autofill hint, or a password transformation, and every Compose text field whose semantics say `password` (`PasswordVisualTransformation`, a password keyboard). It cannot see a card or one-time-code field in Compose (no autofill-hint semantics in the Compose version this package builds against), a custom-drawn field, or a plain text field that happens to hold a card number: mark those with `reviewPrivate()`. If the library cannot read the window, it hides the whole picture rather than send it. The rules are unit-tested (`SensitiveTest`); reading a live window is not covered by a JVM test.
+
+Every text field of a capture is scrubbed before it is queued (e-mail addresses, phone numbers, card numbers, IBANs, tokens, API keys, JWTs, secret URL parameters): see `docs/REVIEW.md`, "What is scrubbed".
 
 **`FLAG_SECURE`.** A window that sets `FLAG_SECURE` is protected on purpose, and a copy of it comes out black. The package does not send that picture as if it were the screen: it checks the flag first, shows `strings.secureScreen` ("This screen is protected from screenshots by the app, so review mode cannot take a picture of it. Nothing was sent.") and opens nothing. A product that wants feedback on such a screen sets the flag off in its `internal` build.
 

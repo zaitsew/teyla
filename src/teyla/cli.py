@@ -76,7 +76,7 @@
   teyla doctor [--quiet] [--json] [--refresh]                    what must be true here, and the fix for each thing that is not
   teyla remind add "<what>" <YYYY-MM-DD> [--how "..."]            file a dated to-do; doctor WARNs within 30d, FIXes once overdue
   teyla remind list | done <n>                                    everything pending; clear the n-th
-  teyla load [--json] [--record] [--quiet] [--admit KIND] [--wait --kind KIND] [--timeout S] [--cwd DIR] [--replay [--days N | --day D]]   machine load: snapshot, verdict (exit 0 OK, 1 BUSY, 2 CRITICAL), admission, wait for a slot
+  teyla load [--json] [--record] [--quiet] [--admit KIND] [--wait --kind KIND [--priority]] [--timeout S] [--cwd DIR] [--replay [--days N | --day D]]   machine load: snapshot, verdict (exit 0 OK, 1 BUSY, 2 CRITICAL), admission, wait for a slot
   teyla guard tick [--quiet] [--dry] | status                    the guard by itself: record, alert file, stop idle Gradle/Kotlin daemons (the load agent runs tick every minute)
   teyla crash [--days N] [--json] [--ack] [--device] [--pull [--quiet]]   after a crash: the panic, the machine's load before it, what to change; --device/--pull: TestFlight device crashes
   teyla storage [--json] [--no-sizes]                             disk and RAM held by agent work: worktrees, build output, caches
@@ -315,13 +315,44 @@ def cmd_sessions(args):
         print(f"{s.day:10} {s.harness:12} {s.sid[:8]:8} {s.size/1e6:5.1f} {s.hours or 0:5.1f} {turns:>5} {corr:>4} {t['output_tokens']/1e3:5.0f}k {len(s.agents):6}  {s.project[:40]} · {(s.title or s.first_prompt)[:60].replace(chr(10),' ')}")
 
 
-def correction_rows(sessions):
+def correction_rows(sessions, days: int | None = None, now=None):
     """(day, project, sid, text) for every correction-shaped human turn. Batch sessions — a
     pipeline calling `grok -p` a thousand times with the same brief — have no human turns to
-    cluster, and their prompt would otherwise top every list."""
-    rows = [(s.day, s.project, s.sid[:8], t.text) for s in sessions if not s.batch for t in s.user_turns if t.corr]
+    cluster, and their prompt would otherwise top every list. With `days`, each TURN must fall in
+    the window by its own time and is dated by it: a session that began months ago and was resumed
+    today lists only today's turns (it used to list every turn, dated from the session's start)."""
+    import datetime as dt
+    from .adapters import local_day
+    cutoff = None
+    if days:
+        cutoff = ((now or dt.datetime.now(dt.timezone.utc)) - dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+    rows = []
+    for s in sessions:
+        if s.batch:
+            continue
+        for t in s.user_turns:
+            if not t.corr:
+                continue
+            if cutoff is not None and not ((t.ts or "")[:19] >= cutoff):   # a turn with no time cannot be placed in the window
+                continue
+            rows.append((local_day(t.ts) if t.ts else s.day, s.project, s.sid[:8], t.text))
     rows.sort()
     return rows
+
+
+def recorded_rows(records, cutoff: str = "", project: str | None = None, show_all: bool = False):
+    """(repo key, record) of the stored corrections to list. Only what `teyla rules propose` counts as a
+    human correction (rules_lifecycle.is_human) and never a prompt a harness wrote (`<task-notification>`,
+    a scheduled task, a subagent report: intent.automated), unless `show_all`."""
+    from . import intent, rules_lifecycle
+    out = []
+    for key, rec in records:
+        if str(rec.get("ts") or "") < cutoff or (project and project not in key + str(rec.get("cwd") or "")):
+            continue
+        if not show_all and (not rules_lifecycle.is_human(rec) or intent.automated(str(rec.get("text") or ""))):
+            continue
+        out.append((key, rec))
+    return out
 
 
 def cmd_corrections(args):
@@ -331,12 +362,16 @@ def cmd_corrections(args):
         from . import corrections
         import datetime as dt
         cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=args.days)).isoformat() if args.days else ""
-        for key, rec in corrections.all_records():
-            if str(rec.get("ts") or "") < cutoff or (args.project and args.project not in key + str(rec.get("cwd") or "")):
-                continue
+        records = corrections.all_records()
+        shown = recorded_rows(records, cutoff, args.project, args.all)
+        for key, rec in shown:
             print(f"{str(rec.get('ts') or '')[:10]} {key[:30]:30} {str(rec.get('text') or '')[:200].replace(chr(10), ' ')}")
+        hidden = len(recorded_rows(records, cutoff, args.project, True)) - len(shown)
+        if hidden:
+            print(f"({hidden} stored record(s) hidden: hook guesses and harness messages, not human corrections; --all shows them)",
+                  file=sys.stderr)
         return
-    rows = correction_rows(_sessions(args))
+    rows = correction_rows(_sessions(args), args.days)
     if args.cluster:
         c = Counter(r[3].lower().strip()[:60] for r in rows)
         for k, n in c.most_common(40):
@@ -549,7 +584,8 @@ def build_parser() -> argparse.ArgumentParser:
             q.add_argument("--no-mark-seen", action="store_true", help=argparse.SUPPRESS)
         if name == "corrections":
             q.add_argument("--cluster", action="store_true")
-            q.add_argument("--recorded", action="store_true", help="the stored corrections (teyla correct, capture hook), not transcript turns")
+            q.add_argument("--recorded", action="store_true", help="the stored human corrections (teyla correct, inbox rejections), not transcript turns; hook guesses and harness messages are hidden")
+            q.add_argument("--all", action="store_true", help="--recorded: also the hook's guesses and harness messages")
         if name == "sessions":
             from . import sessions_tidy
             sessions_tidy.add_args(q)
@@ -738,6 +774,17 @@ def _friendly(e: Exception, cmd: str) -> str:
     return f"teyla: `teyla {cmd}` failed: {type(e).__name__}: {e}. Set TEYLA_DEBUG=1 for the traceback."
 
 
+def _load_parser() -> argparse.ArgumentParser:
+    """A parser that knows only `teyla load`. The machine guard hook runs `teyla load --admit` before
+    every heavy shell command, and the full parser imports every command module (about 1.6 s on a busy
+    Mac, against 0.1 s for this one). The arguments are the same: `register` is the one definition."""
+    from . import load as _load
+    p = _Parser(prog="teyla", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p._top = True
+    _load.register(p.add_subparsers(dest="cmd", required=True))
+    return p
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else list(argv)
     from . import leak_install as _leak_install
@@ -753,7 +800,7 @@ def main(argv=None):
     if argv[0] in ("-h", "--help", "help"):
         from . import helpgroups
         return helpgroups.cmd_help(argv[1:])
-    parser = build_parser()
+    parser = _load_parser() if argv[0] == "load" else build_parser()
     if not argv[0].startswith("-") and argv[0] not in _commands(parser):
         from . import helpgroups
         return helpgroups.unknown(argv[0], _commands(parser))

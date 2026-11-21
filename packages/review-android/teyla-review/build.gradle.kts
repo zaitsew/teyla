@@ -36,6 +36,9 @@ dependencies {
 tasks.withType<Test>().configureEach {
     // Where the golden capture lives in the Teyla repo. Absent in a vendored copy, which has no tests.
     systemProperty("teyla.fixtures", rootDir.resolve("../../tests/fixtures").absolutePath)
+    // The scrub rules' shared test vectors (packages/review-channel/test-vectors/scrub.json). Absent in a vendored copy.
+    systemProperty("teyla.vectors", rootDir.resolve("../review-channel/test-vectors").absolutePath)
+    rootDir.resolve("../review-channel/test-vectors").takeIf { it.isDirectory }?.let { inputs.dir(it) }
     // `-Pteyla.golden.update=1` rewrites tests/fixtures/review-android-capture.json from the encoder.
     if (project.hasProperty("teyla.golden.update")) systemProperty("teyla.golden.update", "1")
 }

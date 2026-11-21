@@ -6,8 +6,11 @@ build lanes at twice the cost" is one line rather than a hand-made script.
 
 A unit is one subagent file (`<session>/subagents/agent-*.jsonl`, one Agent call) with its
 `agent-*.meta.json` (agentType). Its model is the one that wrote most of its output. Messages are
-deduplicated by (message id, request id), the last record of a message wins, and each is priced with
-`pricing.cost_usd`. Columns: units, median turns (assistant messages), median peak context (the largest
+deduplicated by message id (the rule `teyla spend` uses: a retry under a new request id is still one
+message), the last record of a message wins, and each is priced with `pricing.cost_usd`, the one price table;
+a model with no price is named with its tokens, never counted as $0. The window is `teyla spend`'s
+(costing.py): the last N local days, by the local day of each message, so the total here equals the
+"of which subagents" figure of `teyla spend` over the same days. Columns: units, median turns (assistant messages), median peak context (the largest
 prompt, input + cache), median and total dollars.
 
 Reviews come from the review ledger (`review.ledger`, see teyla.reviews). A unit is matched to a review
@@ -29,7 +32,7 @@ import re
 import statistics
 from collections import defaultdict
 
-from . import config
+from . import config, costing
 
 # 7 to 40 hex characters not inside a longer word: a full sha or any usable prefix of one.
 _HEX = re.compile(r"(?<![0-9A-Za-z])[0-9a-f]{7,40}(?![0-9A-Za-z])")
@@ -49,11 +52,11 @@ def _when(ts: str | None) -> _dt.datetime | None:
     return d if d.tzinfo else d.replace(tzinfo=_dt.timezone.utc)
 
 
-def _scan_file(path: str, cutoff: _dt.datetime | None, want_tokens: bool = True) -> dict | None:
-    """One subagent file as a unit, or None when no message of it falls in the window. `want_tokens`
-    False skips collecting the commit-sha tokens review matching needs (about half the scan time)."""
-    from .adapters import claude_code
-    from .pricing import cost_usd
+def _scan_file(path: str, days: set | None, want_tokens: bool = True) -> dict | None:
+    """One subagent file as a unit, or None when no message of it falls in the window (`days`: the
+    local days that count; None: all). `want_tokens` False skips collecting the commit-sha tokens
+    review matching needs (about half the scan time)."""
+    from .adapters import claude_code, local_day
     seen: dict = {}
     tokens: set = set()
     first = None
@@ -80,20 +83,20 @@ def _scan_file(path: str, cutoff: _dt.datetime | None, want_tokens: bool = True)
             if model.startswith("<"):                       # <synthetic>: not a model call
                 continue
             ts = o.get("timestamp")
-            at = _when(ts)
-            if cutoff is not None and (at is None or at < cutoff):
+            if days is not None and (_when(ts) is None or local_day(ts) not in days):
                 continue
             first = first or ts
             if not writes and any(isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") in WRITE_TOOLS
                                   for b in (m.get("content") if isinstance(m.get("content"), list) else [])):
                 writes = True
-            seen[(m.get("id") or ("line", n), o.get("requestId"))] = (model, claude_code._usage_row(m.get("usage") or {}))
+            seen[m.get("id") or ("line", n)] = (model, claude_code._usage_row(m.get("usage") or {}))
     if not seen:
         return None
-    usd, peak, out_by_model = 0.0, 0, defaultdict(int)
+    peak, out_by_model = 0, defaultdict(int)
     usage: dict = {}
+    ledger = costing.Ledger()
     for model, row in seen.values():
-        usd += cost_usd(model, row) or 0.0
+        ledger.add(model, row)
         into = usage.setdefault(model, {})
         for k, v in row.items():
             into[k] = into.get(k, 0) + v
@@ -108,8 +111,8 @@ def _scan_file(path: str, cutoff: _dt.datetime | None, want_tokens: bool = True)
     except (OSError, ValueError, AttributeError):
         pass
     return dict(agent=os.path.basename(path)[:-len(".jsonl")], type=kind or "(untyped)", turns=len(seen), peak=peak,
-                usd=usd, model=max(out_by_model, key=out_by_model.get), first=first, tokens=tokens,
-                usage=usage, explicit=explicit, writes=writes)
+                usd=ledger.usd, model=max(out_by_model, key=out_by_model.get), first=first, tokens=tokens,
+                usage=usage, explicit=explicit, writes=writes, unpriced=dict(ledger.unpriced))
 
 
 def scan(days: int | None = 7, project: str | None = None, root: str | None = None,
@@ -120,8 +123,9 @@ def scan(days: int | None = 7, project: str | None = None, root: str | None = No
     from .adapters import claude_code, since_epoch, stale
     root = claude_code.DEFAULT_ROOT if root is None else root   # at call time, so tests can move it
     now = now or _dt.datetime.now(_dt.timezone.utc)
-    cutoff = now - _dt.timedelta(days=days) if days else None
-    since = cutoff.timestamp() if cutoff else None
+    window = set(costing.window(days, now.astimezone().date())) if days else None
+    # A file untouched for a day longer than the window cannot hold a message of it.
+    since = (now - _dt.timedelta(days=days + 1)).timestamp() if days else None
     units = []
     for f in sorted(glob.glob(os.path.join(root, "*", "*", "subagents", "agent-*.jsonl"))):
         proj = f.split(os.sep)[-4]
@@ -132,7 +136,7 @@ def scan(days: int | None = 7, project: str | None = None, root: str | None = No
                 continue
         except OSError:
             continue
-        u = _scan_file(f, cutoff, want_tokens)
+        u = _scan_file(f, window, want_tokens)
         if u:
             u["project"] = proj
             units.append(u)
@@ -193,8 +197,14 @@ def report(days: int | None = 7, project: str | None = None, root: str | None = 
     led = reviews.load_ledger(path)
     if led is not None:
         match_reviews(units, led)
+    unpriced: dict = defaultdict(int)
+    for u in units:
+        for model, n in u.get("unpriced", {}).items():
+            unpriced[model] += n
+    today = (now or _dt.datetime.now(_dt.timezone.utc)).astimezone().date()
     return dict(days=days, project=project, units=len(units), ledger=str(path) if led is not None else None,
-                total_usd=round(sum(u["usd"] for u in units), 2), rows=summarize(units, led is not None))
+                total_usd=round(sum(u["usd"] for u in units), 2), rows=summarize(units, led is not None),
+                unpriced=dict(unpriced), rule=costing.window_rule(days, today) if days else "window: all time")
 
 
 CONFOUNDED = ("P1 per unit is confounded by task difficulty: hard lanes get the strong model and find more. "
@@ -205,9 +215,10 @@ def render(rep: dict) -> str:
     from .spend import _money
     where = f" in projects matching {rep['project']!r}" if rep["project"] else ""
     L = [f"teyla lanes — {rep['units']} subagent lanes{where}, last {rep['days']} days, API list price, "
-         f"{_money(rep['total_usd'])} in all", ""]
+         f"{_money(rep['total_usd'])} in all", rep.get("rule", "window: all time") + "; the subagents part of `teyla spend`", ""]
+    unpriced = costing.unpriced_lines(rep.get("unpriced") or {})
     if not rep["rows"]:
-        return "\n".join(L + ["no subagent lanes in the window"])
+        return "\n".join(L + ["no subagent lanes in the window"] + unpriced)
     head = (f"{'type':<22} {'model':<20} {'units':>5} {'turns':>6} {'peak ctx':>9} {'med $':>8} {'total $':>9}"
             f" {'matched':>8} {'P1/unit':>8} {'with P1':>8}")
     L.append(head)
@@ -219,6 +230,7 @@ def render(rep: dict) -> str:
                  f"{('-' if not led or r['p1_per_unit'] is None else format(r['p1_per_unit'], '.2f')):>8} "
                  f"{(r['units_with_p1'] if led else '-'):>8}")
     L.append("")
+    L += unpriced
     if rep["ledger"] is None:
         L.append("no review ledger: the matched and P1 columns are empty")
     L.append(CONFOUNDED)

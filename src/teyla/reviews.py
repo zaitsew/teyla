@@ -45,7 +45,7 @@ import shutil
 import subprocess
 from typing import Callable
 
-from . import config
+from . import config, fanout
 
 MODES = {"branch", "commit", "diff", "diff-file"}   # "branch:<paths>" counts as branch
 UNMATCHABLE = {"dirty"}                                # a review of uncommitted work names no commit
@@ -55,6 +55,7 @@ DEFAULT_MIN_LINES = 7
 SUMMARY_NAME = "reviews.json"
 SUMMARY_MAX_AGE_DAYS = 10
 GH_LIMIT = 100
+GH_TIMEOUT = 30          # seconds for one gh call; a repo that does not answer is listed as skipped
 # One search query per repo. `gh pr list --json commits` also fetches each commit's authors, and
 # 100 PRs x 100 commits x 100 authors is over GitHub's 500,000-node limit: every repo failed.
 # This asks only for the commit ids: 100 x (100 + 100) nodes.
@@ -209,7 +210,10 @@ STATES = ("reviewed", "open_p1", "exempt", "skipped", "unreviewed")
 # --- gh ---------------------------------------------------------------------------------------
 
 def _gh_runner(argv: list[str]) -> tuple[int, str, str]:
-    r = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+    try:
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=GH_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return 124, "", f"timed out after {GH_TIMEOUT}s"
     return r.returncode, r.stdout, r.stderr
 
 
@@ -286,14 +290,24 @@ def scan(paths: list[str] | None = None, days: int = 7, cfg: dict | None = None,
             return rep
         runner = _gh_runner
     threshold = min_lines(cfg)
+    targets: list[tuple[pathlib.Path, str]] = []
     for repo in _repos(paths, cfg):
         slug = cloud.origin_slug(repo)
         if not slug:
             if paths:
                 rep["notes"].append(f"{repo.name}: no GitHub origin, skipped")
             continue
-        rep["gh_called"] = True
-        prs, note = merged_prs(slug, since, runner)
+        targets.append((repo, slug))
+    rep["gh_called"] = bool(targets)
+
+    def fetch(t: tuple[pathlib.Path, str]) -> tuple[list[dict] | None, str]:
+        try:
+            return merged_prs(t[1], since, runner)
+        except Exception as e:                  # a runner that raises must not stop the other repos
+            return None, f"gh failed: {e.__class__.__name__}"
+
+    fetched = fanout.pmap(fetch, targets, label="teyla reviews: listing merged PRs", name=lambda t: t[0].name)
+    for (repo, slug), (prs, note) in zip(targets, fetched):
         if prs is None:
             rep["gh_failed"] += 1
             rep["notes"].append(f"{slug}: {note}, skipped")
