@@ -59,11 +59,12 @@ function phoneOrSplit(m: string): string {
   const out: string[] = [];
   let i = 0;
   while (i < tokens.length) {
-    const floor = tokens[i].startsWith("+") ? 8 : 9;
+    const token = tokens[i] ?? "";
+    const floor = token.startsWith("+") ? 8 : 9;
     let best = -1;
     let total = 0;
     for (let j = i; j < tokens.length; j++) {
-      total += digitsOf(tokens[j]).length;
+      total += digitsOf(tokens[j] ?? "").length;
       if (total > 15) break;
       if (total >= floor) best = j;
     }
@@ -73,7 +74,7 @@ function phoneOrSplit(m: string): string {
     } else if (out.length > 0 && out[out.length - 1] === "[phone]") {
       i += 1;
     } else {
-      out.push(tokens[i]);
+      out.push(token);
       i += 1;
     }
   }
