@@ -381,7 +381,7 @@ DOCS_MODULES = frozenset({
     "test_agents_md.py", "test_copy_lane.py", "test_docs_check.py", "test_growth.py", "test_growth_media.py",
     "test_growth_story_video.py", "test_growth_video.py", "test_hosts.py", "test_mac_first_run.py",
     "test_plugin_directory.py", "test_privacy_calls.py", "test_productize.py", "test_prose.py", "test_readme.py",
-    "test_review_capture.py", "test_self_maintenance.py", "test_shield.py", "test_site.py", "test_ux_atlas.py",
+    "test_release_script.py", "test_review_capture.py", "test_self_maintenance.py", "test_shield.py", "test_site.py", "test_ux_atlas.py",
     "test_ux_shots.py",
 })
 _REPO = str(pathlib.Path(__file__).resolve().parents[1])

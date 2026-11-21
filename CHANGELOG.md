@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **A release no longer depends on the state of your checkout, and it writes its own changelog heading.** `scripts/release.sh` used to refuse unless the checkout was a clean `main`, and it never touched `CHANGELOG.md`: seven releases (0.55.0 to 0.58.1) piled their notes under "Unreleased". Now it runs in a temporary worktree at `origin/main` (removed at the end, also on failure), moves everything under "## Unreleased" into `## <version> — <date>` and refuses when that section is empty. The notes of 0.55.0 to 0.58.1 are under their own headings; 0.55.0 and 0.55.1 had none.
+
+## 0.58.1 — 2026-11-19
 - **A tester's report is scrubbed of personal data before it leaves the device.** The comment, the iOS and Mac accessibility label (cut to 200 characters; it was uncapped) and every anchor and element id, screen and string went out raw: only a manual `.reviewPrivate()` region mask existed. The iOS, Mac, web and Android packages now run one set of rules on every text field before a capture is written or sent: e-mail addresses, phone numbers, card numbers (Luhn), IBANs, bearer tokens, API keys, JWTs and secret URL parameters become `[email]`, `[phone]`, `[card]`, `[iban]`, `[token]`. The review channel applies the same rules again before it stores a capture. One file, `packages/review-channel/test-vectors/scrub.json` (40 text and 4 label cases), is read by all four test suites. Also: secure and password fields are masked in the picture on iOS, Mac and Android without a mark, as on the web; iOS sends the last part of the bundle id as `app.product` when the product sets none (the docs promised it; it sent nothing); `teyla review store-check` on an Android build now fails on the channel key and URL names (`TEYLA_REVIEW_KEY`, `TEYLA_REVIEW_URL`) and the client's request path, not only the overlay class. Findings SEC-3, SEC-6, SEC-8, SEC-9.
 - **`teyla load --wait` is first come, first served.** Waiters raced for a free slot with no order, so a release archive lost the race twice in one evening and waited about two hours while newer waiters got in. Each waiter now takes a ticket (`~/.teyla/guard-queue/<kind>/`) and only the oldest live ticket of its kind is admitted; the waiting line says "waiting for a build slot: 2nd in line (1 ahead)" (stderr only). `--wait --priority` puts a release upload or archive ahead of normal waiters, in arrival order among priority ones. Tickets of dead processes and of expired waits are ignored and removed; the ticket also goes on admit, timeout, error and SIGTERM. `teyla load` shows the queue length per kind. A waiter from an older Teyla takes no ticket and still races, so a mixed install degrades to the old behaviour, not a deadlock.
 
@@ -23,11 +26,29 @@
 
 - **`teyla storage offload --recover` no longer keeps a resolved entry.** An offload that stopped with both the original and the drive copy incomplete stayed in the journal after you repaired it, and blocked every later offload. A repeat `--recover` now decides again and clears it.
 
+## 0.58.0 — 2026-11-19
+
 - `teyla storage offload --to <mount point>`: move the heavy folders (DerivedData, the Android SDK, the Gradle caches, and with `--with-app-data` the simulators and virtual devices) to an external drive. Dry run by default. Each folder is copied, checked against a manifest digest, switched to a symlink, smoke-tested, and only then is the original deleted; any failure restores it. `--undo PATH`, `--keep` with `--finalize`, and `--recover` after a crash. `teyla doctor` names an unfinished offload.
 
+## 0.57.0 — 2026-11-19
+
 - **An external drive that goes missing is reported, not discovered by a failing build.** No setting is needed: Teyla looks at the heavy folders (simulator devices, DerivedData, the Android SDK and AVDs, the Gradle caches and wrapper) and reports a symlink that points to another drive ("on <mount point>", found from the path, no fixed `/Volumes`) or into nothing (`DANGLING`), and a plain folder where a link used to be (`REPLACED`: a tool recreated it on the internal disk). A plain folder is never reported; with no link and no config nothing changes. An absent drive is a normal state: `teyla doctor` prints one note and exits 0, the session-start hook prints one line ("do not recreate these paths on the internal disk"), and only `teyla load --admit sim|build` refuses, for the kind whose path dangles (`--wait` re-checks on every poll). `[storage] volumes` adds drives to show, `volumes_required` makes their absence a doctor failure. `teyla storage` prints a `disk` line per drive, and a cache on a drive no longer counts as internal usage. `storage sims --reap` and the sweep touch nothing through a dangling link and never remove a link. On macOS, doctor adds notes for ownership disabled and Spotlight indexing on, each cut off after 8 seconds. New page: docs/LOW-ON-DISK.md.
+
+## 0.56.1 — 2026-11-18
+
 - **The guard refuses about half as many builds and simulators.** A burst of parallel builds used to read as a disk filling up: the disk slope is now projected `guard.disk_trend_min` (15) minutes ahead, not 30. The hold after a bad sample is 3 minutes (was 5), and the disk critical line is 8 GB (was 10). Replayed over the last 7 days: 1526 refused minutes became 711, and waits past the 15-minute timeout went from 18 to 3.
+
+## 0.56.0 — 2026-11-16
+
 - **`teyla sessions tidy`: archive only the sessions where nothing is needed from you.** The Claude desktop app archives any session after 7 idle days, including one that ends on a question to you: 27 of the 40 open questions in `teyla asks` sat in the archive. `tidy` reuses the `teyla asks` collectors and settle rules and archives a session only when it is idle, has no ask that is not done, has no open PR (an unknown PR state keeps it), and has a clean worktree whose HEAD is on a remote branch. Codex sessions are archived with `codex archive`; for Claude desktop, the daily agent reads `--json` and calls the app's `archive_session`, then `teyla sessions record`. The mode starts as `dry` for a week: every candidate is logged once as `would_archive`, `--apply` is refused, and `teyla sessions report` counts the sessions that got a later prompt as mistakes. `undo`, `log` and `mode` complete it. See docs/SESSIONS.md.
+
+## 0.55.1 — 2026-11-16
+
+No changelog entry was recorded for this release.
+
+## 0.55.0 — 2026-11-16
+
+No changelog entry was recorded for this release.
 
 ## 0.54.0 — 2026-11-13 — The weekly brief, sprint slots and Today on the iPhone
 
