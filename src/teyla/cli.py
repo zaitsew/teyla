@@ -769,6 +769,17 @@ def _friendly(e: Exception, cmd: str) -> str:
     return f"teyla: `teyla {cmd}` failed: {type(e).__name__}: {e}. Set TEYLA_DEBUG=1 for the traceback."
 
 
+def _load_parser() -> argparse.ArgumentParser:
+    """A parser that knows only `teyla load`. The machine guard hook runs `teyla load --admit` before
+    every heavy shell command, and the full parser imports every command module (about 1.6 s on a busy
+    Mac, against 0.1 s for this one). The arguments are the same: `register` is the one definition."""
+    from . import load as _load
+    p = _Parser(prog="teyla", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p._top = True
+    _load.register(p.add_subparsers(dest="cmd", required=True))
+    return p
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else list(argv)
     from . import leak_install as _leak_install
@@ -784,7 +795,7 @@ def main(argv=None):
     if argv[0] in ("-h", "--help", "help"):
         from . import helpgroups
         return helpgroups.cmd_help(argv[1:])
-    parser = build_parser()
+    parser = _load_parser() if argv[0] == "load" else build_parser()
     if not argv[0].startswith("-") and argv[0] not in _commands(parser):
         from . import helpgroups
         return helpgroups.unknown(argv[0], _commands(parser))
