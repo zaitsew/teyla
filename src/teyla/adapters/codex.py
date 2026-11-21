@@ -30,6 +30,7 @@ import json
 import os
 import re
 
+from . import cache
 from . import AgentCall, Session, Turn, final_reply, human_text, is_correction, is_retry, stale, strip_reminders, turn_end_candidate
 from ..connectors import classify_result, parse_mcp_tool
 
@@ -37,6 +38,9 @@ NAME = "codex"
 DEFAULT_ROOT = os.path.expanduser("~/.codex/sessions")
 DEFAULT_ARCHIVE_ROOT = os.path.expanduser("~/.codex/archived_sessions")
 DEFAULT_INDEX = os.path.expanduser("~/.codex/session_index.jsonl")
+
+# Bump when `parse` changes a result: the parsed-session cache is keyed on it.
+PARSER_VERSION = 1
 
 
 BATCH_SOURCES = ("exec",)
@@ -115,8 +119,13 @@ def load(root: str | None = None, archive_root: str | None = None,
         files += _rollouts(archive_root, since)
     sessions = []
     for f in files:
-        s = parse(f, titles)
+        # The title comes from the session index, not the rollout: cache the parse without it and
+        # apply it after, so a new index row does not invalidate every entry.
+        key = lambda f=f: cache.make_key(f, NAME, PARSER_VERSION)  # noqa: E731
+        s = cache.cached(key(), lambda f=f: parse(f), key)
         if s is not None:
+            if not s.title:
+                s.title = titles.get(s.sid)
             sessions.append(s)
     return sessions
 

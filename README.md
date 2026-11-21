@@ -3,21 +3,19 @@
   <img alt="Teyla" src="brand/lockup.svg" width="200">
 </picture></h1>
 
-<p align="center"><b>The control room for working with AI agents on one Mac.</b><br>
-What your agent sessions cost, what waits on you, and where each product stands.</p>
+<p align="center"><b>The control room for working with AI agents on one Mac.</b><br>What your agent sessions cost, what waits on you, and where each product stands.</p>
 
-Teyla reads your Claude Code and Codex sessions on your Mac, shows what they cost and what's waiting on you, and fixes the waste. Nothing about your sessions leaves your Mac unless you turn it on.
+Teyla reads your Claude Code and Codex sessions on your Mac, shows what they cost and what's waiting on you, and fixes the waste. Nothing about your sessions leaves your Mac unless you turn it on. It is a command-line tool with a Mac and an iPhone app, for a person who builds products with AI agents. It also reads Grok, Cursor and Hermes sessions.
 
-It is a command-line tool with a Mac and an iPhone app, for a person who builds products with AI agents. It also reads Grok, Cursor and Hermes sessions, keeps every question an agent left for you on one screen, and keeps one line per product on where it stands.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/img/mac/today-dark.png">
-  <img alt="Today in Teyla for Mac, on sample data: each goal as a row of circles that fill with real outcomes, the next step for the first goal, and a year of activity as a grid" src="docs/img/mac/today-light.png" width="820">
-</picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/mac/today-dark.png"><img alt="Today in Teyla for Mac, on sample data: each goal as a row of circles, the next step, and a year of activity" src="docs/img/mac/today-light.png" width="820"></picture>
 
 <p align="center"><a href="https://teyla.dev">teyla.dev</a> · <a href="#set-it-up-with-your-agent">Set up</a> · <a href="#pick-your-packs">Packs</a> · <a href="docs/GUIDE.md">Guide</a> · <a href="docs/COMMANDS.md">Commands</a> · <a href="docs/PRIVACY.md">Privacy</a> · <a href="CHANGELOG.md">Changelog</a> · <a href="CONTRIBUTING.md">Contributing</a> · <a href="LICENSE">Apache-2.0</a></p>
 
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme/highlights-dark.svg"><img src="docs/readme/highlights-light.svg" alt="Six things Teyla does: price 30 days of spend, ten packs, one inbox of questions, one policy, one line per product, nothing leaves your Mac." width="100%"></picture>
+
 ## Set it up with your agent
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme/steps-dark.svg"><img src="docs/readme/steps-light.svg" alt="Five steps: paste one line, see the diagnosis, tick your packs, answer what waits, undo any change." width="100%"></picture>
 
 Paste this into Claude Code or Codex:
 
@@ -44,7 +42,7 @@ uvx --python 3.12 --from git+https://github.com/zaitsew/teyla@v0.58.1 teyla star
 
 ## Pick your packs
 
-Teyla is a kit. `teyla start` opens with this checklist, and only the ticked packs are turned on.
+Teyla is a kit. `teyla start` opens with this checklist; only ticked packs turn on.
 
 | | Pack | The problem | What Teyla does |
 |:-:|---|---|---|
@@ -86,7 +84,7 @@ Subagents cost $390; Opus ran 64% of that.
 - `teyla brief slots` shows the open sprint contracts, what each one waits at, and warns at a third ([OPERATING.md](docs/OPERATING.md#sprint-slots)).
 - `teyla web` opens the same diagnosis in your browser, on 127.0.0.1 only:
 
-![The Start page of teyla web: what 30 days of sessions cost, and the first changes that would save money](docs/img/web-start.png)
+![The Start page of teyla web: 30 days of cost and the first changes that save money](docs/img/web-start.png)
 
 ## What waits on you
 

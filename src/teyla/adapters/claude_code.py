@@ -8,11 +8,15 @@ import os
 import re
 
 from . import CACHE_1H_KEY, ERROR_LOOP, HANDOFF_CONTEXT, LONG_CONTEXT, TOKEN_KEYS, AgentCall, Session, Turn, final_reply, human_text, is_correction, is_retry, local_day, stale, strip_reminders, text_of, turn_end_candidate
+from . import cache
 from ..connectors import classify_result, parse_mcp_tool
 
 NAME = "claude-code"
 DEFAULT_ROOT = os.path.expanduser("~/.claude/projects")
 REPO_HINT = "repos/"
+
+# Bump when `parse` (or `_subagent_usage`) changes a result: the parsed-session cache is keyed on it.
+PARSER_VERSION = 1
 
 # Gaps between consecutive assistant/user records longer than this are treated as "away from the
 # session", not active work (a lunch break, a context switch, a session resumed days later).
@@ -47,7 +51,8 @@ def load(root: str | None = None, repo_names: list[str] | None = None, since: fl
                 continue
         except OSError:
             continue
-        s = parse(f, repo_names)
+        key = lambda f=f: cache.make_key(f, NAME, PARSER_VERSION, repo_names, sub_files=True)  # noqa: E731
+        s = cache.cached(key(), lambda f=f: parse(f, repo_names), key)
         if s is not None:
             sessions.append(s)
     return sessions
@@ -131,6 +136,10 @@ def _subagent_usage(f: str) -> tuple[dict, list]:
         first_ts, out_by_model = None, {}
         with fh:
             for n, line in enumerate(fh):
+                # Only assistant records count, and the first record of any type gives first_ts: once
+                # that is set, a line without "assistant" in it cannot be one.
+                if first_ts and '"assistant"' not in line:
+                    continue
                 try:
                     o = json.loads(line)
                 except Exception:

@@ -70,3 +70,7 @@ The node format (`v`, `h`, `z`, `text`, `icon`, `img`, `spacer`, `use`) is the g
 An area adds its own composites in `components/<area>.mjs`; a name may be defined once across the folder.
 
 `components/mac.mjs` (Mac app, all prefixed `mac`): `macBtn`, `macChip`, `macField`, `macSegment`, `macFold`, `macPageHeader`, `macSection`, `macEmpty`, `macError`, `macAsk` (the ask card and its states), `macProductIcon`, `macSpark`, `macHero`, `macBuilt`, `macQuiet`, `macRowGroup`, `macRow`, `macSheet`, `macPopover`, `macQuickNote`, `macCommandBar`, `macBare`, `macQr`.
+
+`components/review.mjs` (review capture form, prefixed `review`): `reviewPicture` (the frozen picture with a black privacy box and the mark), `reviewIos`, `reviewMac`, `reviewWeb`, `reviewAndroid` (each takes one state: `step` point, comment or done; `mark` none, spot or area; `text`, `listening`, `sending`, `failed`, `outcome` sent or saved, `notice`, `links`), `reviewLauncher`, `reviewWebNotice`. The form is unbranded, so it is drawn in each platform's defaults.
+
+`components/web.mjs` (web, prefixed `web`, `site`, `readme`): `webPage` (the dashboard's top bar and 960 column), `webStart` and `webSpend` (each with a `state`), `webStat`, `webStrip`, `webEmpty`, `webBtn`, `webTag`, `siteHome` (teyla.dev at any width and in the dark values, the one breakpoint is 704 px), `readmeHero`.

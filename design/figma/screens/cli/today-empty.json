@@ -1,0 +1,73 @@
+{
+  "id": "cli.today-empty",
+  "title": "`teyla today`, nothing waiting",
+  "area": "cli",
+  "presentation": "push",
+  "device": {
+    "w": 860,
+    "h": 226
+  },
+  "source": [
+    "src/teyla/today.py:168",
+    "src/teyla/today.py:193"
+  ],
+  "root": {
+    "t": "use",
+    "c": "terminal",
+    "p": {
+      "title": "teyla — zsh — 100×30",
+      "lines": [
+        {
+          "cmd": "teyla today"
+        },
+        [
+          {
+            "v": "Today",
+            "bold": true
+          },
+          "  ",
+          {
+            "v": "Fri 20 Nov",
+            "role": "text-secondary"
+          }
+        ],
+        "",
+        [
+          {
+            "v": "Waiting on you",
+            "bold": true
+          },
+          ": nothing."
+        ],
+        "",
+        [
+          {
+            "v": "Inbox",
+            "bold": true
+          },
+          ": empty."
+        ],
+        [
+          {
+            "v": "Spend",
+            "bold": true
+          },
+          ": ",
+          {
+            "v": "$184",
+            "bold": true
+          },
+          " in the last 7 days, $231 in the 7 before (-20%). API list price."
+        ],
+        "",
+        [
+          {
+            "v": "Next",
+            "bold": true
+          },
+          ": Nothing needs you today."
+        ]
+      ]
+    }
+  }
+}

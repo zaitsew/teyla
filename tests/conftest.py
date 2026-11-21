@@ -133,6 +133,65 @@ def _no_real_launchd(tmp_path_factory, monkeypatch):
     monkeypatch.setattr(subprocess, "run", run)
 
 
+_PROCESS_TOOLS = {"osascript", "killall", "pkill"}
+
+
+def _refused_call(what):
+    def refuse(*a, **k):
+        raise AssertionError(f"a test reached a real {what}: inject a fake (or mark the test "
+                             "@pytest.mark.real_process_calls if it deliberately exercises one)")
+    return refuse
+
+
+def _real_kill_guard(real_kill, spawned=()):
+    """`spawned` holds the pids of the processes this test started: signalling its own child (a subprocess
+    timeout kills it, then waits) is allowed; a pid it did not start is not."""
+    def kill(pid, sig):
+        if sig == 0 or pid in spawned:  # a liveness probe signals nothing; a child of the test is the test's own
+            return real_kill(pid, sig)
+        raise AssertionError(f"a test sent signal {sig} to pid {pid} with the real os.kill: inject a fake `kill` "
+                             "(mark the test @pytest.mark.real_process_calls only if it signals its own child)")
+    return kill
+
+
+@pytest.fixture(autouse=True)
+def _no_real_kill_quit_or_notify(request, monkeypatch):
+    """A test never signals a process, quits an app or runs osascript, killall, pkill or a launchctl write.
+
+    `storage_procs.Ctx.kill` and `guard.Env.quit_app` take their real defaults at class-definition time, so a test
+    that builds either without naming the field (tests/test_guard.py built an Env with no `quit_app`) would act
+    on this Mac's real processes the day a code path reached it. The real os.kill, the AppKit quit, and the
+    subprocess spawn of those tools now raise AssertionError. A test that deliberately exercises a fake of its own
+    needs nothing; one that must reach the real thing (its own child process, a fake tool first on PATH) carries
+    `@pytest.mark.real_process_calls`."""
+    if request.node.get_closest_marker("real_process_calls"):
+        return
+    from teyla import guard, storage_apps, storage_procs
+    real_kill, real_quit = os.kill, storage_apps.quit_bundle
+    quit_refused = _refused_call("app quit (storage_apps.quit_bundle)")
+    spawned: set[int] = set()
+    kill_guard = _real_kill_guard(real_kill, spawned)
+    monkeypatch.setattr(os, "kill", kill_guard)
+    monkeypatch.setattr(storage_apps, "quit_bundle", quit_refused)
+    # The dataclass __init__ of Ctx and Env holds the real callables as default arguments: replace those too.
+    for cls in (storage_procs.Ctx, guard.Env):
+        defaults = cls.__init__.__defaults__ or ()
+        monkeypatch.setattr(cls.__init__, "__defaults__", tuple(
+            kill_guard if d is real_kill else quit_refused if d is real_quit else d for d in defaults))
+    real_popen = subprocess.Popen
+
+    class Popen(real_popen):
+        def __init__(self, cmd, *a, **k):
+            argv = cmd if isinstance(cmd, (list, tuple)) else str(cmd).split()
+            tool = os.path.basename(str(argv[0])) if argv else ""
+            if tool in _PROCESS_TOOLS or (tool == "launchctl" and os.environ.get("TEYLA_LAUNCHD_ANY_HOME") != "1"
+                                          and len(argv) > 1 and str(argv[1]) in _LAUNCHCTL_WRITES):
+                raise AssertionError(f"a test reached the real {tool}: {' '.join(map(str, argv))}")
+            super().__init__(cmd, *a, **k)
+            spawned.add(self.pid)
+    monkeypatch.setattr(subprocess, "Popen", Popen)
+
+
 @pytest.fixture(autouse=True)
 def _no_real_disk(monkeypatch):
     """`load.snapshot` reads the free space of the real home volume. A verdict in a test must not

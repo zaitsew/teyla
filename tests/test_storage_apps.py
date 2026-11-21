@@ -624,6 +624,7 @@ def test_off_makes_no_subprocess_call_and_writes_nothing(mac, clock):
     assert not sa.state_path().exists() and not sa.journal_path().exists()
 
 
+@pytest.mark.real_process_calls     # calls the real quit_bundle, which returns "failed" before touching AppKit
 def test_a_bad_mode_reads_as_off_and_not_macos_does_nothing(mac, clock):
     mac.add("Slack", "com.example.slack")
     assert sa.mode(conf(apps_quit="maybe")) == "off" and sa.mode(conf(apps_quit="ON")) == "on"
@@ -631,6 +632,7 @@ def test_a_bad_mode_reads_as_off_and_not_macos_does_nothing(mac, clock):
     assert sa.quit_bundle("", 1) == "failed" and sa.quit_bundle("com.example.slack", 0) == "failed"
 
 
+@pytest.mark.real_process_calls     # the real quit_bundle, off macOS: returns "failed" at once
 def test_quit_bundle_off_macos_does_nothing(monkeypatch):
     monkeypatch.setattr(sa.sys, "platform", "linux")
     assert sa.quit_bundle("com.example.slack", 1) == "failed"

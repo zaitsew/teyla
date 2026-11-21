@@ -50,12 +50,18 @@ Beyond text, it reads these structures. Screenshot pixels are never read.
 |---|---|---|
 | `term` | a private term (whole word; `-name-` counts); a `[teyla]` term only inside Teyla's repo | blocker |
 | `email` | an address except `example.*`, noreply and `git@host` | blocker |
-| `home` | `/Users/<x>/` or `/home/<x>/` for a real-looking `<x>` | blocker |
-| `secret` | a key with a known shape (GitHub, Anthropic, AWS, Slack, JWT, PEM, and more) | blocker |
+| `home` | `/Users/<x>`, `/home/<x>` or `C:\Users\<x>`, with or without a trailing separator, for a real-looking `<x>` | blocker |
+| `secret` | a key with a known shape (GitHub, Anthropic, AWS, Slack, Telegram bot token, JWT, PEM, and more) | blocker |
 | `secret-generic` | a `key`, `token` or `password` assignment with a long, high-entropy value and no known prefix | triage |
 | `harness-config`, `image-metadata` | see above | blocker |
 | `gitleaks:<RuleID>` | gitleaks' default rules, when `gitleaks` is on the PATH | blocker |
 | `cyrillic` | any character in U+0400 to U+04FF | lang |
+
+Every line is read after NFKC normalization with the zero-width characters (U+200B to U+200D, U+2060, U+FEFF)
+removed, so an address with a hidden character or a fullwidth `@` is read as the plain address. Line numbers do
+not change. Private terms are normalized the same way. A text (a PR body, a commit message) gets the
+`secret-generic` rule in both `teyla leak --text` and `scripts/leak_check.py --text`; it is triage, so it is listed
+and neither exits 1 for it.
 
 A **blocker** gives exit 1. **Triage** is listed and never blocks: the aim is that nobody learns to type an
 override. **Lang** is the language policy (`teyla lang` is its home) and never blocks.
@@ -363,6 +369,23 @@ started. One with quoting is parsed word by word, so `g''h p''r` and `cred''enti
   and `gh api` calls and of `git commit|tag|merge`, plus a `-F`/`--body-file` file, a heredoc, a `$(cat ...)`
   and a piped `cat` or `echo`, go to `teyla leak --text -`. Exit 1 is a refusal with the masked lines; so is
   exit 2, with its coverage note. The hook never prints the text it scanned.
+- **Merges.** `gh pr merge` (`--subject`, `--body`, `-t`, `-b`, `-F`), `gh api -X PUT repos/<o>/<r>/pulls/<n>/merge`
+  and `gh api repos/<o>/<r>/merges` publish a commit title and message into the default branch. The
+  `commit_title` and `commit_message` fields (`-f`, `-F`, `@file`, `--input`) are scanned like a PR body. A merge
+  with no text of its own has nothing to scan here; the merge itself is the owner's gate, outside Teyla.
+- **A push that skips the pre-push gate.** A plain `git push` is the pre-push hook's to scan and the guard leaves
+  it alone. `git push --no-verify` (or any unambiguous prefix, such as `--no-ver`) and `git -c core.hooksPath=...
+  push` (also `--config-env=...`; the key is case-insensitive) turn that hook off, so the guard asks git what
+  the push would send: `git <same -c options> push --dry-run --porcelain --no-verify <same arguments>` in the
+  command's directory, 30 seconds at most (`TEYLA_LEAK_GUARD_PUSH_TIMEOUT`). It contacts the same remote the push
+  would, sends nothing, and lets git apply its own rules (refspecs, `remote.<name>.push`, push remotes, push URLs,
+  URL rewrites, `--follow-tags`, `--all`, `--mirror`). For each ref git would update, the guard scans `old..new`;
+  for a new ref it scans the full history, unless the destination is exactly one configured remote (same fetch and
+  push URL, no URL rewrite anywhere) and then it skips what that remote's tracking refs hold. The tagger and
+  message of each annotated tag that would be sent are scanned too. Deletions, up-to-date and rejected refs send
+  nothing. A dry run that fails or times out is a refusal. `--dry-run` and `-n` pass. With no teyla to scan with,
+  the bypass is refused like
+  any publication. `TEYLA_LEAK_GUARD=0` skips it once, on the record.
 - **Credential paths.** `~/.ssh/id_*` (not `.pub`), `~/.aws/credentials`, the private-terms list (and the file
   `$TEYLA_PRIVATE_TERMS` names), `~/.appstoreconnect/`, `~/.grok/config.toml`, `~/.codex/auth.json` and
   `config.toml`, `~/.claude/.credentials.json`, `~/.netrc`, `~/.docker/config.json`, and `*.pem` or `*.p8`
@@ -370,12 +393,24 @@ started. One with quoting is parsed word by word, so `g''h p''r` and `cred''enti
   path (an `echo`, a commit message, a heredoc) is not a read.
 - **Keychain and visibility.** `security find-generic-password|find-internet-password` with `-w` or `-g`,
   `security dump-keychain` and `gh repo edit --visibility public` are refused. `gh repo create --public` is not.
-- **Failure.** A command with no token passes even when the hook errors (one warning line). A command with a
-  token is refused when python3, the `teyla` package or the scanner is missing, crashes or times out, and when
-  the text cannot be read (a `$VAR` or an unreadable `$( )` body, a pipe from an unknown program, a body
-  file that does not exist yet, a `cd` into a variable, a program name that comes from an expansion, `$( )` or
-  `${` in text fed through stdin). Files resolve in the directory the command runs in
-  (`cd`, `git -C`, `env -C`); a link that ends at a credential is a credential.
+- **Failure.** A command with no token passes even when the hook errors (one warning line). The `gh` and
+  `git` tokens are whole words of the command, not substrings: `git log --grep=commit` is not a commit and
+  starts nothing. A command with a token is refused when python3, the `teyla` package or the scanner is
+  missing, crashes or times out, and when the text cannot be read (a `$VAR` or an unreadable `$( )` body, a
+  pipe from an unknown program, a body file that does not exist yet, a `cd` into a variable, a program name
+  that comes from an expansion, `$( )` or `${` in text fed through stdin). Files resolve in the directory
+  the command runs in (`cd`, `git -C`, `env -C`); a link that ends at a credential is a credential.
+  The hook looks for the python that has teyla (`TEYLA_PYTHON`, then the `teyla` executable's shebang,
+  then `python3` if it can import the package). When none is found, a command that only reads
+  (`gh pr|issue view|list|diff|checks|status`, a `gh api` call with no `-X`/`-f`/`-F`/`--input`, `git log`,
+  `show`, `diff`, `status`) goes on with one warning line. A publication (`git push`, `commit`, `tag`,
+  `merge`, `gh pr create|merge|comment`, `gh release`, `gh api -X POST|PUT|PATCH|DELETE`) and any credential
+  read stay refused.
+- **Why an unreadable program name stays refused.** `$PY hi` is refused even with no publication word in
+  sight. The guard's job is to read the text an agent publishes, and a variable can spell `gh` or `git`
+  (`G=git; $G push`) with its subcommand set in another variable, so no match on words can tell the two
+  apart. A command that is not a publication loses one retry: write the program's name out. `$(( ... ))`
+  arithmetic is not an executable and is read as one word; a `$( )` inside it is a command of its own.
 - **Skip once.** Put `TEYLA_LEAK_GUARD=0` first in the command, as an assignment word before the executable
   (or in the hook's environment). Each skipped publication is appended to `$TEYLA_HOME/leak-skips.log`
   (time and kind, never the text). It lifts only the publication scan, never a credential, Keychain or
@@ -393,6 +428,10 @@ a release asset and the Grep tool are outside it. Wiring for Codex and Grok is i
 hook and `check.sh` need no Teyla install.
 
 ## What it does not do
+
+- It does not catch IBANs, phone numbers or payment card numbers: there is no rule for them.
+- It does not catch a secret split over two lines, or one that is base64-encoded, hex-encoded or otherwise
+  transformed. Only the characters in the normalization above are undone.
 
 - It does not rewrite history and does not rotate a key. A historical finding says to rotate first; removing it
   from history is a separate, deliberate step.

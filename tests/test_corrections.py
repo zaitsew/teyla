@@ -276,12 +276,17 @@ def test_corrections_recorded_lists_the_store_and_legacy_files(tmp_path, _home, 
     from teyla import cli
     code = tmp_path / "code"; repo = _repo(code / "old")
     (repo / ".teyla").mkdir()
-    (repo / ".teyla" / "corrections.jsonl").write_text(json.dumps(_rec("legacy text")) + "\n")
-    corrections.append(_repo(code / "new"), _rec("stored text", ts="2026-09-29T11:00:00+00:00"))
+    (repo / ".teyla" / "corrections.jsonl").write_text(json.dumps({**_rec("legacy text"), "source": "correct"}) + "\n")
+    new = _repo(code / "new")
+    corrections.append(new, {**_rec("stored text", ts="2026-09-29T11:00:00+00:00"), "source": "correct"})
+    corrections.append(new, _rec("a hook guess", ts="2026-09-29T11:05:00+00:00"))   # no human source
     (_home / ".teyla" / "config.toml").write_text(f'code_root = "{code}"\n')
     cli.main(["corrections", "--recorded"])
-    out = capsys.readouterr().out
-    assert "legacy text" in out and "stored text" in out
+    out = capsys.readouterr()
+    assert "legacy text" in out.out and "stored text" in out.out and "a hook guess" not in out.out
+    assert "1 stored record(s) hidden" in out.err
+    cli.main(["corrections", "--recorded", "--all"])
+    assert "a hook guess" in capsys.readouterr().out
     assert ".teyla/" in (repo / ".git" / "info" / "exclude").read_text().splitlines()
 
 

@@ -583,12 +583,13 @@ def test_a_swapped_price_table_is_not_cached(monkeypatch):
     assert pricing.lookup("acme-big") is None
 
 
-def test_the_progress_line_goes_to_stderr_and_only_for_the_card(machine, capsys):
+def test_the_progress_line_goes_to_stderr_for_the_card_and_agent_but_not_json(machine, capsys):
     code, out, err = _run(["start"], capsys)
     assert code == 0 and err.strip() == "Reading 2 sessions from the last 30 days…" and "Reading" not in out
     code, out, err = _run(["start", "--agent"], capsys)
-    assert err == "" and json.loads(out)["summary_text"]
-    code, out, err = _run(["start", "--json"], capsys)
+    assert err.startswith("Reading 2 sessions from the last 30 days…") and "Reading" not in out
+    assert json.loads(out)["summary_text"]
+    code, out, err = _run(["start", "--json"], capsys)       # the apps read --json: silent unless stderr is a terminal
     assert err == "" and json.loads(out)["offers"]
 
 

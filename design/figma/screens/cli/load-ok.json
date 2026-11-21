@@ -1,0 +1,44 @@
+{
+  "id": "cli.load-ok",
+  "title": "`teyla load`, OK",
+  "area": "cli",
+  "presentation": "push",
+  "device": {
+    "w": 860,
+    "h": 298
+  },
+  "source": [
+    "src/teyla/load.py:1690",
+    "src/teyla/load.py:1457"
+  ],
+  "root": {
+    "t": "use",
+    "c": "terminal",
+    "p": {
+      "title": "teyla — zsh — 100×30",
+      "lines": [
+        {
+          "cmd": "teyla load"
+        },
+        [
+          "load: ",
+          {
+            "v": "OK",
+            "role": "saving"
+          }
+        ],
+        "memory: 24.0 GB RAM · swap 0.4 GB of 2.0 GB (2% of RAM) · compressor 1.9 GB · pressure normal",
+        "disk: 114.6 GB free",
+        "cpu: load 3.1 / 4.4 / 4.0 on 10 cores",
+        "sims: 0 booted",
+        "builds: 0 running; compilers 0 (0.0 GB)",
+        "daemons: 0 JVM",
+        "agents: claude 2 · codex 0 · grok 0 · headless lanes 0",
+        "browsers: Chrome 0.9 GB (6 renderers, 0.5 GB)",
+        "vms: 0 (0.0 GB)",
+        "top: Google Chrome 0.9 GB, Claude 0.6 GB, ...",
+        "guard, last hour: 3 admitted, 0 refused"
+      ]
+    }
+  }
+}

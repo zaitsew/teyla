@@ -414,3 +414,10 @@ def test_the_json_flag_prints_one_document(monkeypatch, capsys):
     assert cli.main(["attention", "--json"]) == 0
     doc = json.loads(capsys.readouterr().out)
     assert doc["items"] == [] and doc["quiet"] == {"x": 1}
+
+
+def test_a_failing_task_names_its_exit_once(monkeypatch):
+    items, _ = run_schedules(monkeypatch, [
+        entry(id="launchd:f", name="f", verdict="FAILING", last_exit=1, note="last exit 1")])
+    detail = items[0]["detail"]
+    assert detail.lower().count("last exit 1") == 1

@@ -7,12 +7,13 @@
     leak_check.py --text FILE         scan one text (a PR body before `gh pr create`); `-` = stdin
     leak_check.py --quiet             print only the number of findings
 
-Rules (one finding per line per rule; the match is masked in the output):
+Rules (one finding per line per rule; the match is masked in the output). Every line is read after NFKC
+normalization with the zero-width characters removed, so a disguised address or path is caught:
 
     term      a private term from $TEYLA_PRIVATE_TERMS or ~/.config/teyla/private-terms.txt
               (kept OUTSIDE the repo: this script and its tests hold no private data)
     email     any address except example.*, noreply addresses, `git@host` and `.leak-allow`
-    home      /Users/<x>/ or /home/<x>/ where <x> is not a placeholder
+    home      /Users/<x>, /home/<x> or C:\\Users\\<x> where <x> is not a placeholder
     secret    token / key shapes and PEM private-key headers
     cyrillic  any character in U+0400-U+04FF (everything in the repo is English, except
               language data a feature needs: those files are listed in `.leak-allow`)
@@ -59,12 +60,29 @@ import shlex
 import stat
 import subprocess
 import sys
+import unicodedata
 from pathlib import Path
 from typing import Iterator, NamedTuple
 
 CYRILLIC = re.compile("[\u0400-\u04FF]+")
 EMAIL = re.compile(r"(?<![A-Za-z0-9._%+\-])[A-Za-z0-9._%+\-]+@[A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)*\.[A-Za-z]{2,}")
-HOME = re.compile(r"/(?:Users|home)/([A-Za-z0-9][^/\s'\"`<>$*{}()\[\],;:|\\]*)/")
+# A name after /Users/ or /home/ ends at a separator, a quote, a bracket, a delimiter or the end of the line:
+# a path that ends there is as much a leak as one that goes on. `C:\\Users\\<name>` is the Windows form. A one-character name (`/home/x`) is a placeholder.
+_HOME_NAME = r"([A-Za-z0-9][^/\\\s'\"`<>$*{}()\[\],;:|]*)"
+HOME = re.compile(r"/(?:Users|home)/" + _HOME_NAME + r"(?=[/\\\s'\"`<>)\]},;:|]|$)")
+HOME_WIN = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]:\\{1,2}Users\\{1,2}" + _HOME_NAME + r"(?=[/\\\s'\"`<>)\]},;:|]|$)")
+
+# Characters that hide a match: zero-width space, non-joiner, joiner, word joiner, byte-order mark.
+_INVISIBLE = dict.fromkeys(map(ord, "\u200b\u200c\u200d\u2060\ufeff"))
+
+
+def normalize(line: str) -> str:
+    """The line as the generic rules read it: NFKC (a fullwidth `\uff20` is `@`, a fullwidth dot is `.`) and with the
+    zero-width characters removed (`jane@exa\u200bmple.com`). Done per line, so line numbers stay right. ASCII is
+    returned as it is."""
+    if line.isascii():
+        return line
+    return unicodedata.normalize("NFKC", line.translate(_INVISIBLE)).translate(_INVISIBLE)
 
 EMAIL_OK_DOMAINS = ("example.com", "example.org", "example.net")
 EMAIL_OK_EXACT = {"noreply@anthropic.com", "noreply@github.com"}
@@ -72,10 +90,12 @@ EMAIL_OK_SUFFIX = ("@users.noreply.github.com",)
 # `icon@2x.png` is a retina asset name, not an address. Nothing else is excused by its
 # top-level domain: a name at a `.sh` or `.md` domain can be an address. Other exceptions go in `.leak-allow`.
 RETINA = re.compile(r"^\d+x\.(?:png|jpe?g|gif|svg|webp|heic|pdf)$")
-HOME_OK = {"me", "you", "user", "username", "name", "acme", "example", "runner", "alice", "bob",
+HOME_OK = {"me", "public", "default", "you", "user", "username", "name", "acme", "example", "runner", "alice", "bob",
            "shared", "guest", "yourname", "your-name", "someone", "foo", "bar"}
 
 SECRET_RES = [
+    # A Telegram bot token: the bot id, a colon and 35 characters.
+    re.compile(r"(?<![A-Za-z0-9])\d{8,10}:[A-Za-z0-9_\-]{35}(?![A-Za-z0-9_\-])"),
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY[A-Z ]*-----"),
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}"),
     re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}"),
@@ -183,10 +203,11 @@ def load_terms(cfg: Config) -> None:
     cfg.terms_status = "ok"
     for no, kind, section, payload in terms_lines(raw):
         if kind == "allow":
-            cfg.term_allow.append((payload[0].strip().lower(), payload[1]))
+            cfg.term_allow.append((normalize(payload[0].strip()).lower(), payload[1]))
         elif kind == "badheader":
             cfg.errors.append(f"terms file line {no}: unknown section header; use [everywhere] or [teyla]")
     for term, section in distinct_terms(raw):
+        term = normalize(term)           # the lines are read normalized: a term must be too, or it never matches
         cfg.terms.append((term, re.compile(r"(?<![A-Za-z0-9])" + re.escape(term) + r"(?![A-Za-z0-9])", re.I)))
         cfg.term_sections.append(section)
 
@@ -411,6 +432,7 @@ class PathRules:
     def hits(self, line: str) -> list[Hit]:
         if self.skip:
             return []
+        line = normalize(line)
         out: list[Hit] = []
         for i, r in self.terms:
             for m in r.finditer(line):
@@ -418,10 +440,12 @@ class PathRules:
         for m in EMAIL.finditer(line):
             if not _email_ok(m.group(0), self.cfg):
                 out.append(Hit("email", "blocker", m.start(), m.end(), m.group(0), None))
-        for m in HOME.finditer(line):
-            who = m.group(1)
-            if who.lower() not in HOME_OK and not any(fnmatch.fnmatchcase(who.lower(), g.lower()) for g in self.cfg.allow["home"]):
-                out.append(Hit("home", "blocker", m.start(1), m.end(1), who, None))
+        for rx in (HOME, HOME_WIN):
+            for m in rx.finditer(line):
+                who = m.group(1)
+                low = who.lower().rstrip(".")
+                if len(low) > 1 and low not in HOME_OK and not any(fnmatch.fnmatchcase(low, g.lower()) for g in self.cfg.allow["home"]):
+                    out.append(Hit("home", "blocker", m.start(1), m.end(1), who, None))
         if self.sec:
             known: list[tuple[int, int]] = []
             for r in SECRET_RES:
@@ -446,20 +470,22 @@ class PathRules:
 
 def scan_text(label: str, text: str, cfg: Config) -> list[Finding]:
     """Every finding in `text`, which is shown as `label` (a repo path, `commit:<sha>:message`...)."""
-    return scan_lines(label, label, enumerate(text.splitlines(), 1), cfg)
+    return scan_lines(label, label, enumerate(text.splitlines(), 1), cfg, triage=True)
 
 
-def scan_lines(label: str, gpath: str, lines, cfg: Config) -> list[Finding]:
+def scan_lines(label: str, gpath: str, lines, cfg: Config, triage: bool = False) -> list[Finding]:
     """Findings in `lines`, an iterable of (line number, text). `label` is what is printed;
     `gpath` is the repo path the `.leak-allow` globs and `allow <term> in <glob>` lines are
     matched against (they differ for the content a commit adds: `commit:<sha>:<path>`).
-    One finding per line per rule; the excerpt masks every match on the line."""
-    rules = PathRules(gpath, cfg)
+    One finding per line per rule; the excerpt masks every match on the line. `triage` adds the generic
+    `secret-generic` rule: a text (a PR body, a commit message) is scanned with it, as `teyla leak` does."""
+    rules = PathRules(gpath, cfg, triage=triage)
     out: list[Finding] = []
     for no, line in lines:
         line = line.rstrip("\r\n")
         if not line.strip():
             continue
+        line = normalize(line)          # the spans below are positions in the line the rules read
         hits = rules.hits(line)
         if not hits:
             continue
@@ -669,7 +695,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{f.path}:{f.line}: {f.rule}: {f.excerpt}")
         if findings:
             print(summarize(findings), file=sys.stderr)
-    return 1 if findings else 0
+    # Triage findings (secret-generic) are listed and never block, as in `teyla leak --text`.
+    return 1 if any(SEVERITY.get(f.rule, "blocker") != "triage" for f in findings) else 0
 
 
 if __name__ == "__main__":
