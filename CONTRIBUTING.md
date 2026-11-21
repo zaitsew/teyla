@@ -5,6 +5,7 @@
 - New adapters: implement `NAME`, `DEFAULT_ROOT`, `load()` in `src/teyla/adapters/<harness>.py`; raise `FileNotFoundError` when the store is absent; never read credentials files; add a synthetic fixture test.
 - New advice rules: one function block in `advise.py` with an id, a severity, an evidence line built from numbers in the metrics dict, and one imperative action. If you cannot point at a number, it is not a rule.
 - Nothing in this repo sends data anywhere. Keep it that way.
+- The install lines in `README.md`, `AGENTS.md`, `docs/GUIDE.md` and `site/public/index.html` name the release tag (`...teyla@v0.58.1`). Do not edit it by hand: `scripts/release.sh <version>` rewrites it with the version, and `tests/test_readme.py` fails when a line names another tag.
 - Tests run behind an autouse guard (`tests/conftest.py`): the real `os.kill`, an app quit, `osascript`, `killall`, `pkill` and a `launchctl` write raise, so inject a fake; `@pytest.mark.real_process_calls` opts one test out. A test that runs longer than 120 s dumps every thread's stack (`faulthandler_timeout`), and an unregistered marker is an error (`--strict-markers`).
 
 ## Keeping the public repo clean

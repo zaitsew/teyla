@@ -95,7 +95,7 @@ def test_the_readme_gives_a_stranger_one_line_to_paste_and_one_install_command()
     for line in README.splitlines():
         if "uv tool install" in line:
             assert "--python 3.12" in line, line
-    assert "uvx --python 3.12 --from git+https://github.com/zaitsew/teyla teyla start" in README
+    assert re.search(r"uvx --python 3\.12 --from git\+https://github\.com/zaitsew/teyla@v[0-9.]+ teyla start", README)
 
 
 def test_the_readme_defines_the_words_a_stranger_would_not_know():
@@ -189,3 +189,28 @@ def test_the_guide_pins_the_install_line_and_lists_the_documents():
 def test_this_module_runs_in_the_document_gate(request):
     """`./check.sh docs` is `pytest -m docs`; a push of the README alone must run this module."""
     assert request.node.get_closest_marker("docs") is not None
+
+
+# --- TI-8: the quick start installs a release --------------------------------------------------------
+
+def _version():
+    return re.search(r'^version = "([^"]+)"', (ROOT / "pyproject.toml").read_text(), re.M).group(1)
+
+
+QUICK_START_FILES = ("README.md", "AGENTS.md", "docs/GUIDE.md", "site/public/index.html")
+
+
+@pytest.mark.parametrize("name", QUICK_START_FILES)
+def test_every_install_line_names_the_current_release_tag(name):
+    text = (ROOT / name).read_text()
+    found = re.findall(r"git\+https://github\.com/zaitsew/teyla(@v[0-9][0-9.]*)?", text)
+    assert found, name
+    assert set(found) == {f"@v{_version()}"}, f"{name}: {set(found)}; scripts/release.sh bumps the tag with the version"
+
+
+def test_the_release_script_bumps_the_install_tag_in_those_files():
+    script = (ROOT / "scripts/release.sh").read_text()
+    sed = next(line for line in script.splitlines() if line.startswith("sed") and "zaitsew/teyla" in line)
+    assert "@v$v" in sed
+    for name in QUICK_START_FILES:
+        assert script.count(name) >= 2, f"{name} is edited and staged by release.sh"

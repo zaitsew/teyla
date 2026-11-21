@@ -41,6 +41,22 @@ def _check(level, name, detail, fix=None, **extra):
     return {"level": level, "name": name, "detail": detail, "fix": fix, **extra}
 
 
+def _off(pack: str, what: str = "") -> str:
+    """The detail of an opt-in feature the person has not turned on: a fact, not a fault."""
+    return f"off (pack {pack} — `teyla start` to turn on){what}"
+
+
+def _chosen(cfg: dict, *packs: str) -> bool:
+    """Did the person pick any of these packs (`teyla start`, `teyla features on`)? A pack they never picked is off,
+    and what it would set up is missing by choice; a pack they picked and a missing part is a fault."""
+    try:
+        from . import features
+        picked = features.chosen(cfg)
+    except Exception:  # noqa: BLE001 — an unreadable choice means "not chosen", never a failed doctor
+        return False
+    return any(p in picked for p in packs)
+
+
 def _load_check(cfg: dict) -> dict:
     """`machine:load`: WARN when the machine is CRITICAL, INFO with the verdict line otherwise."""
     try:
@@ -106,7 +122,7 @@ def _repo_checks(cfg: dict) -> list[dict]:
     missing = [n for s_, n in rs if s_ == "missing"]
     differ = [n for s_, n in rs if s_ == "differ"]
     if not rs:
-        out.append(_check("INFO", "repos", f"no git repos under {root}"))
+        out.append(_check("INFO", "repos", f"no git repos under {root}; to scan yours, set code_root in {config.CONFIG_PATH}"))
     else:
         if missing:
             out.append(_check("WARN", "repos:agents-md", f"{len(missing)} repo(s) have only one of AGENTS.md/CLAUDE.md: {', '.join(missing[:8])}",
@@ -134,6 +150,7 @@ def _repo_checks(cfg: dict) -> list[dict]:
 
 def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     from . import policy, update, routine_install, plugin_install
+    from . import features as features_mod, health as _health
     from .adapters import claude_code, codex, grok, hermes, cursor
     cfg = config.load()
     out = []
@@ -240,7 +257,9 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     if config.CONFIG_PATH.exists():
         out.append(_check("OK", "config", f"{config.CONFIG_PATH}: code_root={cfg['code_root']} ops_root={cfg['ops_root']} runs_root={config.runs_root(cfg)} repo={cfg['update']['repo']}"))
     else:
-        out.append(_check("INFO", "config", f"no {config.CONFIG_PATH}; defaults code_root={cfg['code_root']} ops_root={cfg['ops_root']} runs_root={config.runs_root(cfg)}",
+        # ops_root and runs_root keep their defaults for the owner's machine; a stranger has no such folder.
+        out.append(_check("INFO", "config", f"no {config.CONFIG_PATH}; code_root={cfg['code_root']}; "
+                          "ops_root: not used until you set it (ops_root in config.toml)",
                           "teyla policy init  (writes it)"))
 
     # --- harnesses this machine does not use (`[harness] disabled`) ----------------
@@ -291,7 +310,11 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     loaded = {}
     for mod, root, present in mods:
         if not present:
-            out.append(_check("INFO", f"harness:{mod.NAME}", "absent on this machine"))
+            if _health.app_only(mod.NAME):
+                out.append(_check("INFO", f"harness:{mod.NAME}", f"{mod.NAME.capitalize()} app found, CLI not set up — optional "
+                                  "(doctor does not run a program inside an app)"))
+            else:
+                out.append(_check("INFO", f"harness:{mod.NAME}", "absent on this machine"))
             continue
         res = done[f"harness:{mod.NAME}"]
         if res.timed_out:
@@ -317,7 +340,14 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
 
     # --- policy wiring ----------------------------------------------------------
     st = policy.status()
-    if not st.get("policy-file"):
+    # No POLICY.md and the policy pack never chosen: the person has not set it up, so nothing is broken.
+    # A synced copy in a harness is wiring too: someone ran `policy init` or `policy sync`, so a missing
+    # POLICY.md is then a fault, whatever features.chosen says.
+    wired = any(v for k, v in st.items() if k != "policy-file")
+    policy_off = not st.get("policy-file") and not _chosen(cfg, "policy") and not wired
+    if policy_off:
+        out.append(_check("INFO", "policy:file", _off("policy", f"; {policy.POLICY} not written yet"), POLICY_INIT_FIX))
+    elif not st.get("policy-file"):
         out.append(_check("FIX", "policy:file", f"{policy.POLICY} missing", POLICY_INIT_FIX))
     else:
         out.append(_check("OK", "policy:file", str(policy.POLICY)))
@@ -328,6 +358,8 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
             out.append(_check("INFO", f"policy:{k}", "harness not installed"))
         elif v:
             out.append(_check("OK", f"policy:{k}", "wired"))
+        elif policy_off:
+            out.append(_check("INFO", f"policy:{k}", _off("policy")))
         else:
             # codex/grok carry a generated copy of CLAUDE.md, so "not wired" is usually "a day
             # behind ~/.claude/CLAUDE.md" — say which, and what to run.
@@ -392,7 +424,10 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
         add = (f"claude plugin marketplace add {plugin_install.pinned_source(pref)}" if pref
                else "claude plugin marketplace add zaitsew/teyla")
         if pv is None:
-            out.append(_check("FIX", "plugin", "teyla plugin not installed in Claude Code",
+            plugin_off = not _chosen(cfg, *(p.id for p in features_mod.PACKS if p.plugin))
+            out.append(_check("INFO" if plugin_off else "FIX", "plugin",
+                              _off("cost, load, inbox or security", "; the plugin is not installed in Claude Code") if plugin_off
+                              else "teyla plugin not installed in Claude Code",
                               f"{add} && claude plugin install teyla@teyla" if safe else
                               "teyla plugin install zaitsew/teyla   (or: claude plugin marketplace add zaitsew/teyla && claude plugin install teyla@teyla)"))
         elif pv != __version__:
@@ -428,7 +463,9 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
             missing.append(f"skills {row['skills']}/{row['skills_total']}")
         if row["hooks"] is False:
             missing.append("hooks not wired")
-        if missing:
+        if missing and not row["skills"] and row["hooks"] is not True and not _chosen(cfg, "policy"):
+            out.append(_check("INFO", f"harness:{row['harness']}", _off("policy", f"; {', '.join(missing)}"), "teyla harness sync"))
+        elif missing:
             out.append(_check("FIX", f"harness:{row['harness']}", ", ".join(missing), "teyla harness sync"))
         elif (tr := row.get("trust")) and tr["approved"] < tr["total"]:
             # Wired but never approved: the harness skips the hook silently (Codex's trust
@@ -449,7 +486,9 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
             ok, pid, code = routine_install.loaded(label)
             stale = routine_install._wrapper_stale(wrapper, routine_install._teyla_bin(),
                                                    routine_install.launchd_env(routine_install._teyla_bin()))
-            if not plist.exists():
+            if not plist.exists() and not _chosen(cfg, "daily"):
+                out.append(_check("INFO", f"routine:{label.rsplit('.', 1)[-1]}", _off("daily"), "teyla routine install"))
+            elif not plist.exists():
                 out.append(_check("FIX", f"routine:{label.rsplit('.', 1)[-1]}", "not installed", "teyla routine install"))
             elif stale:
                 out.append(_check("FIX", f"routine:{label.rsplit('.', 1)[-1]}", f"{wrapper.name} names a teyla binary that is not the current one, lacks the [env] in config.toml, does not match safe mode or ops_root, or predates a step this release adds", "teyla routine install"))
@@ -507,7 +546,6 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
     # --- tools on this machine (scope, not failures) ----------------------------
     # One detector for the harness CLIs, the one `health:<harness>` uses (PATH, then the app bundles and
     # ~/.local/bin); a binary found off PATH is named with its path.
-    from . import health as _health
     harness_of = {v: k for k, v in _health.BINARY.items()}
 
     def _found(tool: str) -> tuple[str | None, bool]:

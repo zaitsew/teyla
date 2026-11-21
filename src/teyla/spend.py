@@ -70,7 +70,7 @@ VOLUME_MODEL = "claude-sonnet-5-5"
 LINUX_USD_PER_MIN = 0.006
 PLAN_MINUTES = {"free": 2000, "pro": 3000, "team": 3000, "enterprise": 50000}
 
-NOT_COVERED = "not covered yet: W4 duplicated work"
+NOT_COVERED = "not covered yet: W4 duplicated work (the same diff on two branches)"
 
 
 # --- config ----------------------------------------------------------------------------------
@@ -509,7 +509,19 @@ def summary_line(rep: dict) -> str:
             + (f"; top: {rep['findings'][0]['id']} {rep['findings'][0]['title']}" if rep["findings"] else ""))
 
 
+NO_SESSIONS = "No sessions yet in the window."
+
+
+def _coverage_line(c: str) -> str:
+    """A coverage note for a person: W7 named, and the admin keys said to be optional."""
+    c = c.replace("W7:", "W7 product API billing:", 1)
+    return c + " (optional: only for what your products' API keys cost)" if "Keychain" in c else c
+
+
 def render(rep: dict) -> str:
+    if (not rep.get("sessions") and not rep.get("providers") and not rep.get("findings")
+            and not rep.get("total_usd")):
+        return NO_SESSIONS
     L = [f"teyla spend — last {rep['days']} days, API list price (a subscription bills differently)",
          costing.window_rule(rep['days']) + "; subagents are part of the total", "",
          f"window total {_money(rep['total_usd'])} ({rep['window']['first']} to {rep['window']['last']}, local days, "
@@ -534,7 +546,7 @@ def render(rep: dict) -> str:
         L.append("waste: nothing over the thresholds")
     if rep.get("actions") is None:
         L.append("  W8 GitHub Actions: not checked (no gh, no network, or safe mode)")
-    L += [f"  {c}" for c in rep.get("coverage") or []]
+    L += [f"  {_coverage_line(c)}" for c in rep.get("coverage") or []]
     L += ["", NOT_COVERED, "", "top sessions (whole session cost, not the window part):"]
     L += [f"  {_money(r['usd']):>7}  {r['harness']:<11} {_who(r)}" for r in rep["top_sessions"]]
     return "\n".join(L)
