@@ -310,13 +310,44 @@ def cmd_sessions(args):
         print(f"{s.day:10} {s.harness:12} {s.sid[:8]:8} {s.size/1e6:5.1f} {s.hours or 0:5.1f} {turns:>5} {corr:>4} {t['output_tokens']/1e3:5.0f}k {len(s.agents):6}  {s.project[:40]} · {(s.title or s.first_prompt)[:60].replace(chr(10),' ')}")
 
 
-def correction_rows(sessions):
+def correction_rows(sessions, days: int | None = None, now=None):
     """(day, project, sid, text) for every correction-shaped human turn. Batch sessions — a
     pipeline calling `grok -p` a thousand times with the same brief — have no human turns to
-    cluster, and their prompt would otherwise top every list."""
-    rows = [(s.day, s.project, s.sid[:8], t.text) for s in sessions if not s.batch for t in s.user_turns if t.corr]
+    cluster, and their prompt would otherwise top every list. With `days`, each TURN must fall in
+    the window by its own time and is dated by it: a session that began months ago and was resumed
+    today lists only today's turns (it used to list every turn, dated from the session's start)."""
+    import datetime as dt
+    from .adapters import local_day
+    cutoff = None
+    if days:
+        cutoff = ((now or dt.datetime.now(dt.timezone.utc)) - dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+    rows = []
+    for s in sessions:
+        if s.batch:
+            continue
+        for t in s.user_turns:
+            if not t.corr:
+                continue
+            if cutoff is not None and not ((t.ts or "")[:19] >= cutoff):   # a turn with no time cannot be placed in the window
+                continue
+            rows.append((local_day(t.ts) if t.ts else s.day, s.project, s.sid[:8], t.text))
     rows.sort()
     return rows
+
+
+def recorded_rows(records, cutoff: str = "", project: str | None = None, show_all: bool = False):
+    """(repo key, record) of the stored corrections to list. Only what `teyla rules propose` counts as a
+    human correction (rules_lifecycle.is_human) and never a prompt a harness wrote (`<task-notification>`,
+    a scheduled task, a subagent report: intent.automated), unless `show_all`."""
+    from . import intent, rules_lifecycle
+    out = []
+    for key, rec in records:
+        if str(rec.get("ts") or "") < cutoff or (project and project not in key + str(rec.get("cwd") or "")):
+            continue
+        if not show_all and (not rules_lifecycle.is_human(rec) or intent.automated(str(rec.get("text") or ""))):
+            continue
+        out.append((key, rec))
+    return out
 
 
 def cmd_corrections(args):
@@ -326,12 +357,16 @@ def cmd_corrections(args):
         from . import corrections
         import datetime as dt
         cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=args.days)).isoformat() if args.days else ""
-        for key, rec in corrections.all_records():
-            if str(rec.get("ts") or "") < cutoff or (args.project and args.project not in key + str(rec.get("cwd") or "")):
-                continue
+        records = corrections.all_records()
+        shown = recorded_rows(records, cutoff, args.project, args.all)
+        for key, rec in shown:
             print(f"{str(rec.get('ts') or '')[:10]} {key[:30]:30} {str(rec.get('text') or '')[:200].replace(chr(10), ' ')}")
+        hidden = len(recorded_rows(records, cutoff, args.project, True)) - len(shown)
+        if hidden:
+            print(f"({hidden} stored record(s) hidden: hook guesses and harness messages, not human corrections; --all shows them)",
+                  file=sys.stderr)
         return
-    rows = correction_rows(_sessions(args))
+    rows = correction_rows(_sessions(args), args.days)
     if args.cluster:
         c = Counter(r[3].lower().strip()[:60] for r in rows)
         for k, n in c.most_common(40):
@@ -544,7 +579,8 @@ def build_parser() -> argparse.ArgumentParser:
             q.add_argument("--no-mark-seen", action="store_true", help=argparse.SUPPRESS)
         if name == "corrections":
             q.add_argument("--cluster", action="store_true")
-            q.add_argument("--recorded", action="store_true", help="the stored corrections (teyla correct, capture hook), not transcript turns")
+            q.add_argument("--recorded", action="store_true", help="the stored human corrections (teyla correct, inbox rejections), not transcript turns; hook guesses and harness messages are hidden")
+            q.add_argument("--all", action="store_true", help="--recorded: also the hook's guesses and harness messages")
         if name == "sessions":
             from . import sessions_tidy
             sessions_tidy.add_args(q)

@@ -1,0 +1,48 @@
+{
+  "id": "mac.quick-note-done",
+  "title": "Quick note, kept",
+  "area": "mac",
+  "presentation": "overlay",
+  "device": {
+    "w": 580,
+    "h": 244
+  },
+  "source": [
+    "apps/mac/Teyla/UI/QuickNoteView.swift:101"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macQuickNote",
+    "p": {
+      "chips": [
+        {
+          "label": "Inbox",
+          "key": "0"
+        },
+        {
+          "label": "Atlas",
+          "key": "1",
+          "on": true
+        },
+        {
+          "label": "Pebble",
+          "key": "2"
+        },
+        {
+          "label": "Quill",
+          "key": "3"
+        },
+        {
+          "label": "Fern",
+          "key": "4"
+        },
+        {
+          "label": "More…"
+        }
+      ],
+      "how": "Atlas · picked from your last note",
+      "state": "done",
+      "text": "Kept under Atlas."
+    }
+  }
+}

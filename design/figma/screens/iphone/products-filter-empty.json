@@ -1,0 +1,73 @@
+{
+  "id": "iphone.products-filter-empty",
+  "title": "Products · nothing needs attention",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/PortfolioView.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {
+        "decisions": 6
+      },
+      "title": "All products",
+      "trailing": "New task",
+      "tab": "products",
+      "gap": 16,
+      "kids": [
+        {
+          "t": "v",
+          "name": "Headline",
+          "w": "fill",
+          "gap": 4,
+          "kids": [
+            {
+              "t": "text",
+              "v": "1 off track · 2 at risk · 3 on track",
+              "s": "ios-body",
+              "c": "ios-label",
+              "weight": 600,
+              "w": "fill"
+            },
+            {
+              "t": "text",
+              "v": "Stores checked 3 h ago · GitHub checked 5 min ago",
+              "s": "ios-caption",
+              "c": "ios-label-2",
+              "w": "fill"
+            }
+          ]
+        },
+        {
+          "t": "use",
+          "c": "iosSegment",
+          "p": {
+            "options": [
+              "All",
+              "Needs attention"
+            ],
+            "selected": "Needs attention"
+          }
+        },
+        {
+          "t": "use",
+          "c": "iosEmpty",
+          "p": {
+            "icon": "checkmark.circle",
+            "title": "Nothing needs attention.",
+            "big": false
+          }
+        }
+      ]
+    }
+  }
+}

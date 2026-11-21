@@ -37,9 +37,26 @@ An image with a declared surface counts only the changes that touched that surfa
     whats_new = ["store/notes/*.txt"]
     listing = ["apps/store/listing/**"]        # default: the usual places that exist
     screenshots = ["docs/screenshots/**/*.png"]
+    store_paths = ["apps/ios/**", "apps/mac/**"]   # the store checks count only changes to these paths
+
+    [[freshness.hold]]                          # store submissions are on hold: say so, stop the nagging
+    items = ["whats-new", "listing", "screenshots"]
+    since = 2026-10-27
+    reason = "submission hold"
+    until = 2026-12-01                          # optional; the hold ends on that date
 
     [freshness.surfaces]                        # README image glob -> the sources that draw that screen
     "docs/img/mac/**" = ["apps/mac/Teyla/**"]
+
+The store checks (whats-new, listing, screenshots) count only the changes that touched `store_paths`, the
+paths the shipped app builds from. Default: `apps/**` when the repo has an `apps/` folder, else the whole repo.
+A CLI-only merge in a repo that also ships an app does not make the store text stale.
+
+A `[freshness] hold` (one table or a list of tables) silences the store items it names (`items`, default all
+three) from `since` until the optional `until` date. A held item is not checked, not reported, not written to the
+problems file and so not shown by the session-start banner; the output says `held since <date>: <reason>` instead
+and `--json` carries the hold. The README checks are never held. `teyla whats-new draft` counts from the same
+baseline (the newest commit that touched the What's New files) with the same filter, so both agree.
 
 Offline by default: local git only, no network, no model call, so it reads the remote-tracking refs as they
 are. `--fetch` first runs `git fetch --quiet origin` in each product repo (30 s limit; a failure is noted on
@@ -71,6 +88,7 @@ DEFAULT_SURFACE_CHANGES = 5
 REVIEW_MARK = re.compile(r"<!--\s*teyla:reviewed\s+(\d{4}-\d{2}-\d{2})\s*-->")
 FETCH_TIMEOUT = 30
 CHECKS = ("readme", "readme-images", "whats-new", "listing", "screenshots")
+STORE_CHECKS = ("whats-new", "listing", "screenshots")
 DEFAULT_LISTING = ("apps/store/listing/**", "docs/store/listing*.json", "content/store/**/*.txt",
                    "fastlane/metadata/**", "store/**/*.txt")
 DEFAULT_SCREENSHOTS = ("docs/screenshots/**/*.png", "docs/store/**/*.png", "content/store/**/*.png",
@@ -122,7 +140,51 @@ def settings(repo: pathlib.Path) -> dict:
             "burst": num("burst", DEFAULT_BURST), "readme_lines": num("readme_lines", DEFAULT_README_LINES),
             "surface_changes": num("surface_changes", DEFAULT_SURFACE_CHANGES), "surfaces": surfaces,
             "skip": set(strs("skip")), "listing": strs("listing"), "screenshots": strs("screenshots"),
-            "whats_new": strs("whats_new")}
+            "whats_new": strs("whats_new"), "store_paths": strs("store_paths"), "holds": _holds(t.get("hold"))}
+
+
+def _date(v) -> dt.date | None:
+    if isinstance(v, dt.datetime):
+        return v.date()
+    if isinstance(v, dt.date):
+        return v
+    if isinstance(v, str):
+        try:
+            return dt.date.fromisoformat(v.strip()[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def _holds(raw) -> list[dict]:
+    """`[freshness] hold` as a list of {items, since, until, reason}. A table or a list of tables. An entry with
+    no valid `since` date is ignored; `items` keeps only the store checks (default: all three)."""
+    entries = [raw] if isinstance(raw, dict) else raw if isinstance(raw, list) else []
+    out = []
+    for e in entries:
+        if not isinstance(e, dict):
+            continue
+        since = _date(e.get("since"))
+        if since is None:
+            continue
+        items = e.get("items")
+        items = [x for x in items if x in STORE_CHECKS] if isinstance(items, list) else list(STORE_CHECKS)
+        until = _date(e.get("until"))
+        reason = e.get("reason")
+        out.append({"items": items, "since": since.isoformat(), "until": until.isoformat() if until else None,
+                    "reason": " ".join(reason.split()) if isinstance(reason, str) and reason.strip()
+                    else "no reason given"})
+    return out
+
+
+def active_holds(cfg: dict, today: dt.date) -> list[dict]:
+    """The holds in force on `today`: it started, and `until` (when set) has not come."""
+    return [h for h in cfg["holds"]
+            if h["since"] <= today.isoformat() and (not h["until"] or today.isoformat() < h["until"])]
+
+
+def hold_line(h: dict) -> str:
+    return f"held since {h['since']}: {h['reason']}" + (f" (until {h['until']})" if h["until"] else "")
 
 
 # --- git helpers --------------------------------------------------------------------
@@ -363,8 +425,16 @@ def _item(check: str, verdict: str, **kw) -> dict:
     return base
 
 
+def effective_store_paths(cfg: dict, tree: Tree) -> list[str]:
+    """The paths the shipped app builds from: `store_paths`, else `apps/**` when the repo has an `apps/` folder,
+    else none (every path counts, as before)."""
+    if cfg["store_paths"]:
+        return cfg["store_paths"]
+    return ["apps/**"] if any(f.startswith("apps/") for f in tree.listing()) else []
+
+
 def _evaluate(repo, product, check, label, advice, change, cfg, cache, path=None, now=None, burst=False,
-              surface=None, note="") -> dict:
+              surface=None, note="", store=False) -> dict:
     """Stale when enough user-facing changes landed since `change` and it is old enough. With `burst`, also at
     `cfg["burst"]` changes whatever the age. With `surface` (source globs), only the changes that touched the
     surface count, and `cfg["surface_changes"]` of them are enough at any age."""
@@ -375,6 +445,9 @@ def _evaluate(repo, product, check, label, advice, change, cfg, cache, path=None
     age = (now - change["when"]).days
     since = change["when"].date().isoformat()
     what = "user-facing changes"
+    if store and cache.get("_store"):
+        sres = [_glob_re(g) for g in cache["_store"]]
+        user = [u for u in user if any(r.match(f) for f in u["files"] for r in sres)]
     if surface:
         res = [_glob_re(g) for g in surface]
         user = [u for u in user if any(r.match(f) for f in u["files"] for r in res)]
@@ -429,10 +502,16 @@ def check_product(manifest: dict, now: dt.datetime | None = None) -> dict:
     cache: dict = {"_ref": tree.ref, "_maint": maintenance_matcher((*(cfg["listing"] or DEFAULT_LISTING),
                                                   *(cfg["screenshots"] or DEFAULT_SCREENSHOTS),
                                                   *DEFAULT_NOTES, *cfg["whats_new"]))}
+    cache["_store"] = effective_store_paths(cfg, tree)
+    holds = active_holds(cfg, (now or _now()).date())
+    held = {c for h in holds for c in h["items"]}
     items: list[dict] = []
 
     def run(check, fn):
-        items.append(_item(check, "skip") if check in cfg["skip"] else fn())
+        if check in held:
+            items.append(_item(check, "held"))
+        else:
+            items.append(_item(check, "skip") if check in cfg["skip"] else fn())
 
     def readme():
         if not tree.has("README.md"):
@@ -476,7 +555,7 @@ def check_product(manifest: dict, now: dt.datetime | None = None) -> dict:
         where = "docs/whats-new" if any(f.startswith("docs/whats-new/") for f in files) else files[0]
         return _evaluate(repo, product, "whats-new", where, "Write the next What's New from them.",
                          testflight.newest_change(repo, [f":(literal){f}" for f in files]), cfg, cache,
-                         where, now)
+                         where, now, store=True)
 
     notes_patterns = [*DEFAULT_NOTES, *cfg["whats_new"]]
 
@@ -488,7 +567,7 @@ def check_product(manifest: dict, now: dt.datetime | None = None) -> dict:
                 return _item(check, "skip")
             spec = [_glob(p) for p in pats] + ([f":(exclude,glob){n}" for n in notes_patterns] if drop_notes else [])
             return _evaluate(repo, product, check, label, advice, testflight.newest_change(repo, spec),
-                             cfg, cache, ", ".join(pats), now)
+                             cfg, cache, ", ".join(pats), now, store=True)
         return fn
 
     run("readme", readme)
@@ -499,7 +578,34 @@ def check_product(manifest: dict, now: dt.datetime | None = None) -> dict:
     run("screenshots", group("screenshots", "store screenshots", "Re-capture the screenshots.",
                              cfg["screenshots"], DEFAULT_SCREENSHOTS))
     verdict = "stale" if any(i["verdict"] == "stale" for i in items) else "ok"
-    return {"product": product, "repo": str(repo), "verdict": verdict, "error": None, "checks": items}
+    return {"product": product, "repo": str(repo), "verdict": verdict, "error": None, "checks": items,
+            "holds": [{**h, "line": hold_line(h)} for h in holds]}
+
+
+def notes_baseline(repo: pathlib.Path) -> dict | None:
+    """The commit `teyla freshness` counts the What's New changes from: the newest commit on the default branch
+    that touched a store notes file. {when, sha, subject}, or None when the repo has no notes file.
+    `teyla whats-new draft` starts here too, so the two commands agree."""
+    tree = Tree(repo)
+    files = notes_files(tree, settings(repo)["whats_new"])
+    if not files:
+        return None
+    return testflight.newest_change(repo, [f":(literal){f}" for f in files])
+
+
+def draft_changes(repo: pathlib.Path, since: str) -> tuple[list[dict], list[dict]]:
+    """(user-facing, internal) changes since `since`, judged as the store checks judge them: a title that is not
+    internal, a file that is not maintenance, and a file under the store paths. Everything else is internal."""
+    cfg = settings(repo)
+    tree = Tree(repo)
+    is_maint = maintenance_matcher((*(cfg["listing"] or DEFAULT_LISTING), *(cfg["screenshots"] or DEFAULT_SCREENSHOTS),
+                                    *DEFAULT_NOTES, *cfg["whats_new"]))
+    sres = [_glob_re(g) for g in effective_store_paths(cfg, tree)]
+    items = merged_changes_with_files(repo, since, tree.ref)
+    titled, _ = whats_new.split_changes(items)
+    keep = {id(c) for c in titled
+            if any(not is_maint(f) and (not sres or any(r.match(f) for r in sres)) for f in c["files"])}
+    return [c for c in items if id(c) in keep], [c for c in items if id(c) not in keep]
 
 
 def _error(manifest: dict, msg: str) -> dict:
@@ -565,11 +671,14 @@ def render_text(rows: list[dict], fetched: bool = False) -> str:
             out.append(f"{r['product']}: {r['error']}")
             continue
         stale = _stale(r)
+        held = [f"  {h['line']}" for h in r.get("holds") or []]
         if not stale:
             out.append(f"{r['product']}: ok")
+            out += held
             continue
         out.append(f"{r['product']}: {len(stale)} stale ({', '.join(c['check'] for c in stale)})")
         out += [f"  {c['text']}" for c in stale]
+        out += held
     if not fetched and any(_stale(r) for r in rows if r["verdict"] != "error"):
         out.append(HINT)
     return "\n".join(out) + "\n"

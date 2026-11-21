@@ -1,0 +1,191 @@
+{
+  "id": "mac.decisions-close",
+  "title": "Decisions, closing suggestions",
+  "area": "mac",
+  "presentation": "tab",
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/UI/DecisionsView.swift:73"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macWindow",
+    "p": {
+      "selected": "decisions",
+      "badges": {
+        "today": 4,
+        "decisions": 4,
+        "operations": 1
+      },
+      "linked": [
+        "today",
+        "home",
+        "decisions",
+        "products",
+        "settings"
+      ],
+      "kids": [
+        {
+          "t": "v",
+          "w": 720,
+          "gap": 24,
+          "kids": [
+            {
+              "t": "use",
+              "c": "macPageHeader",
+              "p": {
+                "title": "Decisions",
+                "context": "4 decisions wait on you, best first."
+              }
+            },
+            {
+              "t": "use",
+              "c": "macFold",
+              "p": {
+                "title": "Teyla suggests closing 3",
+                "open": true,
+                "kids": [
+                  {
+                    "t": "v",
+                    "w": "fill",
+                    "gap": 2,
+                    "pad": [
+                      0,
+                      0,
+                      0,
+                      16
+                    ],
+                    "kids": [
+                      {
+                        "t": "text",
+                        "v": "The sync fix landed, so the duplicates question is settled.",
+                        "s": "mac-body",
+                        "c": "text",
+                        "w": "fill"
+                      },
+                      {
+                        "t": "text",
+                        "v": "Pebble · the session already did it",
+                        "s": "mac-caption",
+                        "c": "text-secondary"
+                      }
+                    ]
+                  },
+                  {
+                    "t": "v",
+                    "w": "fill",
+                    "gap": 2,
+                    "pad": [
+                      0,
+                      0,
+                      0,
+                      16
+                    ],
+                    "kids": [
+                      {
+                        "t": "text",
+                        "v": "The pricing page already uses the name chosen on Tuesday.",
+                        "s": "mac-body",
+                        "c": "text",
+                        "w": "fill"
+                      },
+                      {
+                        "t": "text",
+                        "v": "Quill · the session already did it",
+                        "s": "mac-caption",
+                        "c": "text-secondary"
+                      }
+                    ]
+                  },
+                  {
+                    "t": "v",
+                    "w": "fill",
+                    "gap": 2,
+                    "pad": [
+                      0,
+                      0,
+                      0,
+                      16
+                    ],
+                    "kids": [
+                      {
+                        "t": "text",
+                        "v": "The demo reply was sent from the session.",
+                        "s": "mac-body",
+                        "c": "text",
+                        "w": "fill"
+                      },
+                      {
+                        "t": "text",
+                        "v": "Atlas · the session already did it",
+                        "s": "mac-caption",
+                        "c": "text-secondary"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "t": "use",
+              "c": "macBtn",
+              "p": {
+                "text": "Accept these 3"
+              }
+            },
+            {
+              "t": "h",
+              "gap": 8,
+              "align": "center",
+              "kids": [
+                {
+                  "t": "text",
+                  "v": "Closed 3",
+                  "s": "mac-body",
+                  "c": "text-secondary"
+                },
+                {
+                  "t": "use",
+                  "c": "macBtn",
+                  "p": {
+                    "text": "Undo"
+                  }
+                }
+              ]
+            },
+            {
+              "t": "h",
+              "gap": 6,
+              "align": "start",
+              "kids": [
+                {
+                  "t": "icon",
+                  "n": "exclamationmark.triangle.fill",
+                  "size": 14,
+                  "c": "danger"
+                },
+                {
+                  "t": "text",
+                  "v": "Could not close one question. Nothing changed.",
+                  "s": "mac-body",
+                  "c": "danger"
+                }
+              ]
+            },
+            {
+              "t": "use",
+              "c": "macBtn",
+              "p": {
+                "text": "Back",
+                "kind": "borderless"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

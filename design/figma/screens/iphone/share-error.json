@@ -1,0 +1,171 @@
+{
+  "id": "iphone.share-error",
+  "title": "Share extension · could not save",
+  "area": "iphone",
+  "presentation": "sheet",
+  "source": [
+    "apps/ios/TeylaShare/ShareView.swift:1"
+  ],
+  "root": {
+    "t": "v",
+    "name": "Share sheet",
+    "w": "fill",
+    "fill": "#000000@0.35",
+    "gap": 0,
+    "kids": [
+      {
+        "t": "v",
+        "w": "fill",
+        "h": 28,
+        "kids": []
+      },
+      {
+        "t": "v",
+        "name": "Form sheet",
+        "w": "fill",
+        "h": "fill",
+        "r": 26,
+        "fill": "ios-bg",
+        "gap": 16,
+        "pad": [
+          0,
+          16,
+          0,
+          16
+        ],
+        "kids": [
+          {
+            "t": "h",
+            "w": "fill",
+            "h": 56,
+            "align": "center",
+            "kids": [
+              {
+                "t": "text",
+                "v": "Cancel",
+                "s": "ios-text",
+                "c": "primary",
+                "link": "close"
+              },
+              {
+                "t": "spacer"
+              },
+              {
+                "t": "text",
+                "v": "Taste",
+                "s": "ios-card-title",
+                "c": "ios-label"
+              },
+              {
+                "t": "spacer"
+              },
+              {
+                "t": "text",
+                "v": "Save",
+                "s": "ios-card-title",
+                "c": "primary",
+                "weight": 600,
+                "opacity": 1
+              }
+            ]
+          },
+          {
+            "t": "v",
+            "w": "fill",
+            "gap": 8,
+            "pad": 16,
+            "r": "ios-panel",
+            "fill": "ios-card",
+            "kids": [
+              {
+                "t": "text",
+                "v": "Shared",
+                "s": "ios-caption",
+                "c": "ios-label-2",
+                "weight": 600
+              },
+              {
+                "t": "text",
+                "v": "Quiet notes for loud days",
+                "s": "ios-body",
+                "c": "ios-label",
+                "weight": 600,
+                "w": "fill"
+              },
+              {
+                "t": "text",
+                "v": "pebble.example/blog/quiet-notes",
+                "s": "ios-caption",
+                "c": "ios-label-2",
+                "w": "fill"
+              }
+            ]
+          },
+          {
+            "t": "use",
+            "c": "iosSegment",
+            "p": {
+              "options": [
+                "Like",
+                "Dislike"
+              ],
+              "selected": "Like"
+            }
+          },
+          {
+            "t": "v",
+            "w": "fill",
+            "gap": 8,
+            "pad": 16,
+            "r": "ios-panel",
+            "fill": "ios-card",
+            "kids": [
+              {
+                "t": "text",
+                "v": "Why? (optional, tap the keyboard's mic to dictate)",
+                "s": "ios-caption",
+                "c": "ios-label-2",
+                "weight": 600
+              },
+              {
+                "t": "text",
+                "v": "It reminds me of the notes app I used to love.",
+                "s": "ios-body",
+                "c": "ios-label",
+                "w": "fill"
+              }
+            ]
+          },
+          {
+            "t": "text",
+            "v": "It goes to your Mac the next time you open Teyla. With a sentence it waits for your yes; without one it stays raw.",
+            "s": "ios-caption",
+            "c": "ios-label-2",
+            "w": "fill"
+          },
+          {
+            "t": "h",
+            "w": "fill",
+            "gap": 6,
+            "align": "start",
+            "kids": [
+              {
+                "t": "icon",
+                "n": "exclamationmark.triangle.fill",
+                "size": 15,
+                "c": "danger"
+              },
+              {
+                "t": "text",
+                "v": "Could not save this. Open Teyla once and try again.",
+                "s": "ios-body",
+                "c": "danger",
+                "w": "fill"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
