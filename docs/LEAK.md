@@ -363,6 +363,20 @@ started. One with quoting is parsed word by word, so `g''h p''r` and `cred''enti
   and `gh api` calls and of `git commit|tag|merge`, plus a `-F`/`--body-file` file, a heredoc, a `$(cat ...)`
   and a piped `cat` or `echo`, go to `teyla leak --text -`. Exit 1 is a refusal with the masked lines; so is
   exit 2, with its coverage note. The hook never prints the text it scanned.
+- **Merges.** `gh pr merge` (`--subject`, `--body`, `-t`, `-b`, `-F`), `gh api -X PUT repos/<o>/<r>/pulls/<n>/merge`
+  and `gh api repos/<o>/<r>/merges` publish a commit title and message into the default branch. The
+  `commit_title` and `commit_message` fields (`-f`, `-F`, `@file`, `--input`) are scanned like a PR body. A merge
+  with no text of its own has nothing to scan here; the merge itself is the owner's gate, outside Teyla.
+- **A push that skips the pre-push gate.** A plain `git push` is the pre-push hook's to scan and the guard leaves
+  it alone. `git push --no-verify` (or any unambiguous prefix, such as `--no-ver`) and `git -c core.hooksPath=...
+  push` (also `--config-env=core.hooksPath=...`; the key is case-insensitive) turn that hook off, so the guard
+  scans the commits the push sends: every source ref the refspecs name (`src` of `+src:dst`; `HEAD` when none;
+  every ref for `--all`, `--mirror`, `--tags` or a glob; a `:dst` deletion sends nothing), minus what the
+  destination already has. A configured remote is compared with its own tracking refs. A URL, or a name git
+  does not know, has nothing yet, so the full history of the pushed refs is scanned. An omitted remote follows
+  git: `branch.<b>.pushRemote`, `remote.pushDefault`, `branch.<b>.remote`, else `origin`. `--dry-run` and `-n`
+  send nothing and pass. With no teyla to scan with, the bypass is refused like
+  any publication. `TEYLA_LEAK_GUARD=0` skips it once, on the record.
 - **Credential paths.** `~/.ssh/id_*` (not `.pub`), `~/.aws/credentials`, the private-terms list (and the file
   `$TEYLA_PRIVATE_TERMS` names), `~/.appstoreconnect/`, `~/.grok/config.toml`, `~/.codex/auth.json` and
   `config.toml`, `~/.claude/.credentials.json`, `~/.netrc`, `~/.docker/config.json`, and `*.pem` or `*.p8`
