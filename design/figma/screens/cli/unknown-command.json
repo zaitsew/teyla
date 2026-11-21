@@ -1,0 +1,321 @@
+{
+  "id": "cli.unknown-command",
+  "title": "Unknown command, `teyla tody`",
+  "area": "cli",
+  "presentation": "push",
+  "device": {
+    "w": 860,
+    "h": 766
+  },
+  "source": [
+    "src/teyla/helpgroups.py:183"
+  ],
+  "root": {
+    "t": "use",
+    "c": "terminal",
+    "p": {
+      "title": "teyla — zsh — 100×44",
+      "lines": [
+        {
+          "cmd": "teyla tody"
+        },
+        "Unknown command 'tody'. Did you mean 'today'?",
+        [
+          {
+            "mark": true
+          },
+          " ",
+          {
+            "v": "Teyla",
+            "bold": true
+          },
+          " 0.58.1  what your AI agent sessions cost, and what waits on you"
+        ],
+        [
+          "Usage: teyla ",
+          {
+            "v": "<command>",
+            "role": "primary"
+          },
+          " [options]      teyla ",
+          {
+            "v": "<command>",
+            "role": "primary"
+          },
+          " --help for one command"
+        ],
+        "",
+        [
+          {
+            "v": "Start",
+            "bold": true
+          }
+        ],
+        [
+          "  ",
+          {
+            "v": "start        ",
+            "role": "primary"
+          },
+          "Find where the money goes, and fix it one change at a time"
+        ],
+        [
+          "  ",
+          {
+            "v": "features     ",
+            "role": "primary"
+          },
+          "Pick the packs you need; see which are on"
+        ],
+        [
+          "  ",
+          {
+            "v": "apply        ",
+            "role": "primary"
+          },
+          "Make the changes that `start` offers (each can be undone)"
+        ],
+        [
+          "  ",
+          {
+            "v": "undo         ",
+            "role": "primary"
+          },
+          "Put back only the setting Teyla changed"
+        ],
+        [
+          "  ",
+          {
+            "v": "doctor       ",
+            "role": "primary"
+          },
+          "Check that Teyla can see your tools, with the fix for each gap"
+        ],
+        [
+          {
+            "v": "  2 more: ",
+            "role": "text-secondary"
+          },
+          {
+            "v": "teyla help --all",
+            "role": "primary"
+          }
+        ],
+        [
+          {
+            "v": "Daily",
+            "bold": true
+          }
+        ],
+        [
+          "  ",
+          {
+            "v": "today        ",
+            "role": "primary"
+          },
+          "What waits on you, the Inbox, the week's spend, one next step"
+        ],
+        [
+          "  ",
+          {
+            "v": "web          ",
+            "role": "primary"
+          },
+          "Open the dashboard in your browser (this machine only)"
+        ],
+        [
+          "  ",
+          {
+            "v": "asks         ",
+            "role": "primary"
+          },
+          "Every question an AI session left waiting on you"
+        ],
+        [
+          "  ",
+          {
+            "v": "note         ",
+            "role": "primary"
+          },
+          "Keep a note, linked to a product"
+        ],
+        [
+          "  ",
+          {
+            "v": "answer       ",
+            "role": "primary"
+          },
+          "Answer a question inside the session that asked it"
+        ],
+        [
+          {
+            "v": "  7 more: ",
+            "role": "text-secondary"
+          },
+          {
+            "v": "teyla help --all",
+            "role": "primary"
+          }
+        ],
+        [
+          {
+            "v": "Products",
+            "bold": true
+          }
+        ],
+        [
+          "  ",
+          {
+            "v": "products     ",
+            "role": "primary"
+          },
+          "Usage of every product, in one table"
+        ],
+        [
+          "  ",
+          {
+            "v": "product      ",
+            "role": "primary"
+          },
+          "The product registry: repos, aliases, stage"
+        ],
+        [
+          "  ",
+          {
+            "v": "testflight   ",
+            "role": "primary"
+          },
+          "Did the iOS build reach a person"
+        ],
+        [
+          {
+            "v": "  29 more: ",
+            "role": "text-secondary"
+          },
+          {
+            "v": "teyla help --all",
+            "role": "primary"
+          }
+        ],
+        [
+          {
+            "v": "Spend",
+            "bold": true
+          }
+        ],
+        [
+          "  ",
+          {
+            "v": "spend        ",
+            "role": "primary"
+          },
+          "What the AI work cost, and which part bought nothing"
+        ],
+        [
+          "  ",
+          {
+            "v": "monitor      ",
+            "role": "primary"
+          },
+          "Adoption report: tokens, models, corrections, advice"
+        ],
+        [
+          "  ",
+          {
+            "v": "lanes        ",
+            "role": "primary"
+          },
+          "Subagent lanes by type and model: cost and review findings"
+        ],
+        [
+          {
+            "v": "  8 more: ",
+            "role": "text-secondary"
+          },
+          {
+            "v": "teyla help --all",
+            "role": "primary"
+          }
+        ],
+        [
+          {
+            "v": "Setup",
+            "bold": true
+          }
+        ],
+        [
+          "  ",
+          {
+            "v": "config       ",
+            "role": "primary"
+          },
+          "Show ~/.teyla/config.toml, or set one key"
+        ],
+        [
+          "  ",
+          {
+            "v": "policy       ",
+            "role": "primary"
+          },
+          "One policy file wired into every harness"
+        ],
+        [
+          "  ",
+          {
+            "v": "update       ",
+            "role": "primary"
+          },
+          "Check GitHub for a newer release and install it"
+        ],
+        [
+          "  ",
+          {
+            "v": "uninstall    ",
+            "role": "primary"
+          },
+          "Undo every write Teyla made on this machine"
+        ],
+        [
+          {
+            "v": "  18 more: ",
+            "role": "text-secondary"
+          },
+          {
+            "v": "teyla help --all",
+            "role": "primary"
+          }
+        ],
+        [
+          {
+            "v": "Advanced",
+            "bold": true
+          }
+        ],
+        [
+          {
+            "v": "  17 commands for rules, the control plane and debugging: ",
+            "role": "text-secondary"
+          },
+          {
+            "v": "teyla help --all",
+            "role": "primary"
+          }
+        ],
+        "",
+        [
+          "Run ",
+          {
+            "v": "teyla",
+            "role": "primary"
+          },
+          " for your numbers, or ",
+          {
+            "v": "teyla start",
+            "role": "primary"
+          },
+          " to begin."
+        ]
+      ]
+    }
+  }
+}

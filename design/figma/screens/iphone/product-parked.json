@@ -1,0 +1,123 @@
+{
+  "id": "iphone.product-parked",
+  "title": "Product page · parked",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/ProductDetailView.swift:1"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {
+        "decisions": 6
+      },
+      "title": "Moss",
+      "large": false,
+      "back": "All products",
+      "tab": "products",
+      "gap": 20,
+      "kids": [
+        {
+          "t": "h",
+          "w": "fill",
+          "gap": 10,
+          "align": "center",
+          "kids": [
+            {
+              "t": "use",
+              "c": "iosProductIcon",
+              "p": {
+                "letter": "M",
+                "size": 48,
+                "quiet": true
+              }
+            },
+            {
+              "t": "v",
+              "w": "fill",
+              "gap": 4,
+              "kids": [
+                {
+                  "t": "text",
+                  "v": "Moss",
+                  "s": "ios-large-title",
+                  "c": "ios-label",
+                  "size": 28
+                },
+                {
+                  "t": "use",
+                  "c": "iosHealth",
+                  "p": {
+                    "health": "parked"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "t": "text",
+          "v": "Parked · earned: prototype",
+          "s": "ios-body",
+          "c": "ios-label-2",
+          "w": "fill"
+        },
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 4,
+          "kids": [
+            {
+              "t": "text",
+              "v": "Why",
+              "s": "ios-caption",
+              "c": "ios-label-2",
+              "weight": 600
+            },
+            {
+              "t": "text",
+              "v": "Parked on 3 Nov until the spring. Nothing waits on you.",
+              "s": "ios-body",
+              "c": "ios-label",
+              "w": "fill"
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "name": "Platforms",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "iosHeader",
+              "p": {
+                "title": "Platforms"
+              }
+            },
+            {
+              "t": "use",
+              "c": "iosPlatformCard",
+              "p": {
+                "icon": "iphone",
+                "name": "iPhone",
+                "primary": true,
+                "line": "No build yet",
+                "lineTone": "ios-label-2"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

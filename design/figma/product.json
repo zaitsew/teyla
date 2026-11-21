@@ -1,0 +1,33 @@
+{
+  "name": "Teyla",
+  "file": "Teyla — Surfaces (0.58)",
+  "tokens": "tokens.mjs",
+  "areas": "areas.json",
+  "start": "iphone.home",
+  "pages": [
+    "Cover · Foundations",
+    "Surfaces",
+    "Captures"
+  ],
+  "glyph": "teyla.",
+  "solid": [
+    "primary",
+    "needs-you",
+    "saving",
+    "danger"
+  ],
+  "captures": [
+    [
+      "Mac app (docs/img/mac)",
+      "docs/img/mac"
+    ],
+    [
+      "Web dashboard (docs/img)",
+      "docs/img"
+    ]
+  ],
+  "version": {
+    "file": "pyproject.toml",
+    "regex": "version = \"([^\"]+)\""
+  }
+}

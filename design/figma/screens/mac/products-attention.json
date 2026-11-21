@@ -1,0 +1,68 @@
+{
+  "id": "mac.products-attention",
+  "title": "Products, nothing needs attention",
+  "area": "mac",
+  "presentation": "tab",
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/UI/PortfolioViews.swift:111"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macWindow",
+    "p": {
+      "selected": "products",
+      "badges": {
+        "today": 4,
+        "decisions": 4,
+        "operations": 1
+      },
+      "linked": [
+        "today",
+        "home",
+        "decisions",
+        "products",
+        "settings"
+      ],
+      "kids": [
+        {
+          "t": "use",
+          "c": "macPageHeader",
+          "p": {
+            "title": "All products",
+            "context": "4 on track · 1 parked · Stores checked 3 h ago · GitHub 20 min ago"
+          }
+        },
+        {
+          "t": "h",
+          "gap": 16,
+          "align": "center",
+          "kids": [
+            {
+              "t": "use",
+              "c": "macSegment",
+              "p": {
+                "options": [
+                  "All",
+                  "Needs attention"
+                ],
+                "selected": "Needs attention"
+              }
+            }
+          ]
+        },
+        {
+          "t": "use",
+          "c": "macEmpty",
+          "p": {
+            "symbol": "checkmark.circle",
+            "title": "Nothing needs attention."
+          }
+        }
+      ]
+    }
+  }
+}

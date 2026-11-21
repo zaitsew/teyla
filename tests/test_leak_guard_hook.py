@@ -74,14 +74,15 @@ class Box:
         p.chmod(0o755)
         return mark
 
-    def payload(self, command=None, tool="Bash", path=None) -> str:
+    def payload(self, command=None, tool="Bash", path=None, cwd=None) -> str:
         ti = {"command": command, "description": "d"} if path is None else {"file_path": str(path)}
-        return json.dumps({"session_id": "s", "cwd": str(self.work), "hook_event_name": "PreToolUse",
+        return json.dumps({"session_id": "s", "cwd": cwd or str(self.work), "hook_event_name": "PreToolUse",
                            "tool_name": tool, "tool_input": ti})
 
-    def run(self, command=None, *, tool="Bash", path=None, args=(), script=HOOK, payload=None, path_dirs=None, **env):
+    def run(self, command=None, *, tool="Bash", path=None, args=(), script=HOOK, payload=None, path_dirs=None,
+            cwd_override=None, **env):
         if payload is None:
-            payload = self.payload(command, tool, path)
+            payload = self.payload(command, tool, path, cwd_override)
         e = {k: v for k, v in os.environ.items()
              if not k.startswith(("TEYLA_", "FAKE_")) and k not in ("PYTHONPATH", "CLAUDE_PLUGIN_ROOT")}
         e.update(HOME=str(self.home), TEYLA_HOME=str(self.home / ".teyla"), TEYLA_PRIVATE_TERMS=str(self.terms),
@@ -387,39 +388,39 @@ def test_the_python_behind_teyla_is_used_when_python3_lacks_the_package(box):
     refused(box.run(f"gh pr create -t T -b {SECRET}", **kw), "refused")
     # A `#!/usr/bin/env python3` shebang names no file: python3 on PATH decides, and here it has no package.
     console.write_text("#!/usr/bin/env python3\nimport sys\n")
-    refused(box.run("gh pr create -t T -b B", **kw), "the guard failed")
+    refused(box.run("gh pr create -t T -b B", **kw), "is not installed for any python3")
     # A shebang that names an executable outside the known interpreter roots, or one inside the repo the command
     # runs in, is not followed: a planted console script cannot pick the guard's interpreter.
     allow = box.tmp / "python-allow"
     allow.write_text("#!/bin/sh\nexit 0\n")
     allow.chmod(0o755)
     console.write_text(f"#!{allow}\n")
-    refused(box.run(f"cat {box.home}/.ssh/id_rsa", **kw), "the guard failed")
+    refused(box.run(f"cat {box.home}/.ssh/id_rsa", **kw), "is not installed for any python3")
     planted = box.work / "bin"
     planted.mkdir()
     (planted / "python3").write_text("#!/bin/sh\nexit 0\n")
     (planted / "python3").chmod(0o755)
     console.write_text(f"#!{planted / 'python3'}\n")
-    refused(box.run(f"cat {box.home}/.ssh/id_rsa", **kw), "the guard failed")
+    refused(box.run(f"cat {box.home}/.ssh/id_rsa", **kw), "is not installed for any python3")
     (box.work / "teyla").write_text(f"#!{py}\nimport sys\n")       # the script itself inside the repo
     (box.work / "teyla").chmod(0o755)
     refused(box.run("gh pr create -t T -b B", TEYLA_PYTHON=None, TEYLA_PYTHON_ROOTS=str(venv),
-                    path_dirs=f"{bare}:{box.work}:/usr/bin:/bin"), "the guard failed")
+                    path_dirs=f"{bare}:{box.work}:/usr/bin:/bin"), "is not installed for any python3")
     # A relative `./teyla` (`.` on PATH) and a shebang that climbs out of a root with `..` are judged by where
     # the files really are: inside the repo, and outside every root.
     (box.work / "teyla").write_text(f"#!{py}\nimport sys\n")
     refused(box.run("gh pr create -t T -b B", TEYLA_PYTHON=None, TEYLA_PYTHON_ROOTS=str(venv),
-                    path_dirs=f"{bare}:.:/usr/bin:/bin"), "the guard failed")
+                    path_dirs=f"{bare}:.:/usr/bin:/bin"), "is not installed for any python3")
     climb = pathlib.Path("/usr/bin/../..") / str(allow).lstrip("/")
     console.write_text(f"#!{climb}\n")
     refused(box.run("gh pr create -t T -b B", TEYLA_PYTHON=None, TEYLA_PYTHON_ROOTS="/usr/bin",
-                    path_dirs=kw["path_dirs"]), "the guard failed")
+                    path_dirs=kw["path_dirs"]), "is not installed for any python3")
     # The venv is outside every known root once the test stops naming it.
     console.write_text(f"#!{py}\nimport sys\n")
-    refused(box.run("gh pr create -t T -b B", TEYLA_PYTHON=None, path_dirs=kw["path_dirs"]), "the guard failed")
+    refused(box.run("gh pr create -t T -b B", TEYLA_PYTHON=None, path_dirs=kw["path_dirs"]), "is not installed for any python3")
     # No `teyla` anywhere: the same refusal, with the bare python3.
     console.unlink()
-    refused(box.run("gh pr create -t T -b B", **kw), "the guard failed")
+    refused(box.run("gh pr create -t T -b B", **kw), "is not installed for any python3")
 
 
 def test_a_guard_that_crashes_is_a_refusal_for_a_matched_command(box):
@@ -873,3 +874,419 @@ def test_expansions_in_text_that_reaches_a_publication_through_stdin_are_refused
     allowed(box.run("gh pr comment 4 -F - <<< 'literal $(date) and `x`'"))
     allowed(box.run("echo 'literal $(date)' | gh pr comment 4 -F -"))
     allowed(box.run("gh pr comment 4 -F - <<EOF\nplain text, costs $5\nEOF"))
+
+
+# --- sprint 2026-11-20: arithmetic, word-bounded tokens, no teyla ---------------------------------------
+
+def test_arithmetic_expansion_is_one_word_and_its_substitution_is_its_own_command(box):    # ORC-1
+    allowed(box.run('echo "$(( $(date +%s)-s ))s"'))
+    allowed(box.run("echo $(( 1 + 2 ))"))
+    allowed(box.run("n=$(( (1+2)*3 )); echo $n"))
+    allowed(box.run("echo $( (ls) )"))                       # `$( (` is a subshell, not arithmetic
+    # a publication inside the arithmetic is still found and scanned
+    refused(box.run(f"echo $(( $(gh pr create -t T -b {SECRET}) + 1 ))"), "gh pr create")
+    refused(box.run(f'echo "$(( $(git commit -m {SECRET}) ))"'), "git commit")
+
+
+def test_an_unreadable_executable_is_refused_and_real_publications_stay_refused(box):    # HK-7
+    # Kept on purpose: a variable can spell gh or git, and the words around it can be spelt in pieces, so a
+    # token match cannot tell `$PY hi` from `$G push`. docs/LEAK.md says why.
+    refused(box.run("PY=/bin/echo; $PY hi"), "expansion the guard cannot read")
+    refused(box.run("G=git; $G push origin main"), "expansion the guard cannot read")
+    refused(box.run("G=git; $G commit -m x"), "expansion the guard cannot read")
+    refused(box.run("H=gh; $H pr create -t T -b B"), "expansion the guard cannot read")
+    refused(box.run("$(echo gh) pr create -t T -b B"), "expansion the guard cannot read")
+    assert box.scanner_calls() == []
+
+
+def test_the_shell_screen_matches_words_not_substrings(box):                               # HK-5
+    for cmd in ("git log --grep=commit", "git log --grep=tag --oneline", "ls ghost-prs", "echo github issues"):
+        allowed(box.run(cmd))
+    assert box.python_calls() == [], "none of these started python"
+    # real shapes still match, with options between the words and a path in front of the executable
+    refused(box.run(f"gh -R o/r pr create -t T -b {SECRET}"), "gh pr create")
+    refused(box.run(f"/usr/bin/git -C . commit -m {SECRET}"), "git commit")
+    refused(box.run(f"git -c user.name=x tag -a v1 -m {SECRET}"), "git tag")
+
+
+@pytest.fixture
+def no_teyla_box(box):
+    """PATH holds tr, mkdir, date and a python3 that cannot import teyla; no teyla executable anywhere."""
+    only = box.tmp / "only"
+    only.mkdir()
+    for tool in ("mkdir", "date", "tr"):
+        (only / tool).symlink_to(shutil.which(tool))
+    (only / "python3").write_text("#!/bin/sh\nexit 1\n")
+    (only / "python3").chmod(0o755)
+    box.kw = dict(TEYLA_PYTHON=None, path_dirs=str(only), HOME=str(box.home))
+    return box
+
+
+@pytest.mark.parametrize("command", ["gh pr view 12", "gh pr list --state open", "gh pr diff 12", "gh pr checks 12",
+                                     "gh issue view 3", "gh api repos/o/r/pulls/1"])
+def test_a_read_only_shape_goes_on_when_teyla_cannot_be_found(no_teyla_box, command):    # HK-6
+    r = no_teyla_box.run(command, **no_teyla_box.kw)
+    assert r.returncode == 0 and r.stdout == ""
+    assert "not scanned" in r.stderr and r.stderr.count("\n") == 1
+
+
+@pytest.mark.parametrize("command", ["git push origin main && git commit -m x", "gh pr create -t T -b B",
+                                     "gh pr merge 12", "gh pr comment 12 -b hi", "gh release create v1",
+                                     "gh api -X POST repos/o/r/issues -f title=t", "gh api repos/o/r/issues -f title=t",
+                                     "gh pr view 12 && gh pr create -t T -b B", "git tag v1", "git merge topic",
+                                     "gh api -X PUT repos/o/r/pulls/1/merge", "gh repo edit --visibility public",
+                                     "cat ~/.aws/credentials"])
+def test_real_publications_stay_refused_when_teyla_cannot_be_found(no_teyla_box, command):    # HK-6
+    r = no_teyla_box.run(command, **no_teyla_box.kw)
+    assert r.returncode == 2, (command, r.stderr)
+    assert "cannot be scanned" in r.stderr
+
+
+def test_the_read_only_exemption_needs_a_fully_read_only_command(no_teyla_box):
+    r = no_teyla_box.run("gh pr view 12 $(gh pr merge 12)", **no_teyla_box.kw)
+    assert r.returncode == 2
+
+
+def test_git_reads_carry_no_token_so_they_never_need_teyla(no_teyla_box):                 # HK-6
+    for cmd in ("git log --stat", "git show HEAD", "git diff --cached", "git log --grep=commit"):
+        allowed(no_teyla_box.run(cmd, **no_teyla_box.kw))
+
+
+# --- review round: JSON escapes are whitespace; the read-only exemption sees through quoting and chains ------
+
+@pytest.mark.parametrize("command", ["gh\tpr\tcreate -t T -b B", "gh\npr\ncreate -t T -b B", "git\tcommit\t-m\tx",
+                                     "gh\rpr\rcreate -t T -b B"])
+def test_escaped_whitespace_between_the_words_is_still_a_publication(box, command):
+    box.run(command)
+    assert box.python_calls(), command          # the token path ran: it was not waved through as plain
+
+
+@pytest.mark.parametrize("command", ["gh\tpr\tcreate -t T -b B", "gh\npr\ncreate -t T -b B", "git\tcommit\t-m\tx"])
+def test_escaped_whitespace_is_refused_without_teyla_too(no_teyla_box, command):
+    r = no_teyla_box.run(command, **no_teyla_box.kw)
+    assert r.returncode == 2, (command, r.stderr)
+    assert "cannot be scanned" in r.stderr
+
+
+@pytest.mark.parametrize("command", ["gh pr view 12; cat ~/.aws/cred''entials",
+                                     "gh pr view 12 && cat ~/.aws/credentials",
+                                     "gh pr view 12\ncat ~/.aws/cred''entials",
+                                     "gh pr view 12 | tee x", "gh pr view 12 > ~/.ssh/authorized_keys",
+                                     "gh pr view 12; cat ~/.ssh/i\"\"d_ed25519"])
+def test_a_read_only_command_that_chains_or_hides_a_credential_is_refused_without_teyla(no_teyla_box, command):
+    r = no_teyla_box.run(command, **no_teyla_box.kw)
+    assert r.returncode == 2, (command, r.stderr)
+
+
+def test_an_escaped_backslash_before_t_is_not_a_tab(no_teyla_box):
+    # JSON `creden\\tials` is the shell text `creden\tials`, which the shell reads as `credentials`
+    r = no_teyla_box.run("gh pr view 12 && cat ~/.aws/creden\\tials", **no_teyla_box.kw)
+    assert r.returncode == 2, r.stderr
+    r = no_teyla_box.run("cat ~/.aws/creden\\tials", **no_teyla_box.kw)
+    assert r.returncode == 2, r.stderr
+
+
+# --- HK-8 and HK-2: a push that skips the pre-push gate, and the merge forms -------------------------------
+
+BYPASS_PUSHES = [
+    "git push --no-verify origin main", "git push origin main --no-verify", "git push --no-ver origin main",
+    "git push -u --no-verify", "git -c core.hooksPath=/dev/null push origin main",
+    "git -c core.hookspath=/dev/null push", "git --config-env=core.hooksPath=HOOKS push origin main",
+    "git push\t--no-verify\torigin", "git push --no-verif''y origin", "git -C {repo} push --no-verify origin main",
+    "git push --no-verify --force-with-lease origin main", "git push --no-verify --force-if-includes origin main",
+    "git push -q --no-verify origin main",
+]
+
+
+def _g(repo, *argv):
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
+    return subprocess.run(["git", "-C", str(repo), *argv], check=True, capture_output=True, text=True, env=env).stdout.strip()
+
+
+def _bare(box, name: str) -> str:
+    """A bare repo used as a remote (file:// URL, no network); returns its URL."""
+    path = box.tmp / f"{name}.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(path)], check=True, capture_output=True)
+    return f"file://{path}"
+
+
+def _repo(box, message: str, name: str = "repo", push_first: bool = False) -> pathlib.Path:
+    """A real repo on `main` with one commit carrying `message`, and a bare `origin` (empty unless `push_first`)."""
+    repo = box.tmp / name
+    repo.mkdir()
+    _g(repo, "init", "-q", "-b", "main")
+    for k, v in (("user.name", "Dev"), ("user.email", "dev@users.noreply.github.com"), ("push.default", "current")):
+        _g(repo, "config", k, v)
+    _g(repo, "remote", "add", "origin", _bare(box, f"{name}-origin"))
+    _g(repo, "commit", "-q", "--allow-empty", "-m", message)
+    if push_first:
+        _g(repo, "push", "-q", "origin", "main")
+    return repo
+
+
+def _two_branch_repo(box, topic_message: str) -> pathlib.Path:
+    """main is clean, pushed and checked out; `gone` is a clean pushed branch; `topic` carries the leaking commit."""
+    repo = _repo(box, "clean start", "repo2", push_first=True)
+    _g(repo, "push", "-q", "origin", "main:gone")
+    _g(repo, "checkout", "-q", "-b", "topic")
+    _g(repo, "commit", "-q", "--allow-empty", "-m", topic_message)
+    _g(repo, "checkout", "-q", "main")
+    return repo
+
+
+def _leak_cmd(box, command, repo, **env):
+    return box.run(command.format(repo=repo), cwd_override=str(repo), HOOKS="/dev/null", **env)
+
+
+@pytest.mark.parametrize("command", BYPASS_PUSHES)
+def test_a_push_that_skips_the_pre_push_gate_has_its_commits_scanned(box, command):          # HK-8
+    repo = _repo(box, f"note on {TERM}")
+    refused(_leak_cmd(box, command, repo), "git push (pre-push gate skipped)", "pre-push gate", "--no-verify")
+    assert any(c.startswith("leak --commits") for c in box.scanner_calls()), box.scanner_calls()
+
+
+def test_a_clean_push_that_skips_the_gate_passes_after_the_scan(box):                         # HK-8
+    repo = _repo(box, "an ordinary change")
+    allowed(_leak_cmd(box, "git push --no-verify origin main", repo))
+    assert any(c.startswith("leak --commits") for c in box.scanner_calls())
+
+
+@pytest.mark.parametrize("command", ["git push --dry-run --no-verify origin main", "git push -n --no-verify",
+                                     "git push --dry origin main", "git push origin main", "git push -u origin topic",
+                                     "git push --force-with-lease origin topic", "git -c user.name=x push origin main"])
+def test_a_dry_run_and_an_ordinary_push_stay_the_pre_push_hooks_job(box, command):        # HK-8
+    repo = _repo(box, f"note on {TERM}")
+    allowed(box.run(command, cwd_override=str(repo)))
+    assert box.scanner_calls() == []
+
+
+def test_a_gate_skipping_push_is_refused_without_teyla_too(no_teyla_box):                   # HK-8
+    for command in ("git push --no-verify origin main", "git -c core.hooksPath=/dev/null push",
+                    "git -c CORE.HOOKSPATH=/dev/null push origin main"):
+        r = no_teyla_box.run(command, **no_teyla_box.kw)
+        assert r.returncode == 2 and "cannot be scanned" in r.stderr, (command, r.stderr)
+    allowed(no_teyla_box.run("git push origin main", **no_teyla_box.kw))
+    allowed(no_teyla_box.run("git push --dry-run origin main", **no_teyla_box.kw))
+
+
+def test_the_skip_prefix_lifts_the_push_scan_and_is_logged(box):                            # HK-8
+    repo = _repo(box, f"note on {TERM}")
+    allowed(box.run("TEYLA_LEAK_GUARD=0 git push --no-verify origin main", cwd_override=str(repo)))
+    assert len(box.skips()) == 1 and box.scanner_calls() == []
+
+
+def test_the_bypass_arguments_keep_everything_but_the_bypass():
+    sys.path.insert(0, str(SRC))
+    from teyla import leak_guard
+    f = leak_guard._push_bypass_args
+    assert f(["--no-verify", "--signed", "backup", "main"], False) == ["--signed", "backup", "main"]
+    assert f(["--no-ver", "-o", "ci.skip", "--force-with-lease", "-q", "origin"], False) == ["-o", "ci.skip", "--force-with-lease", "origin"]
+    assert f(["origin", "main"], True) == ["origin", "main"]
+    assert f(["--no-verify", "-n", "origin"], False) is None and f(["origin"], False) is None
+
+
+def test_a_push_the_dry_run_cannot_read_is_refused_not_waved_through(box):                    # fail closed
+    repo = _repo(box, "an ordinary change")
+    _g(repo, "remote", "add", "gone", f"file://{box.tmp}/missing.git")
+    refused(_leak_cmd(box, "git push --no-verify gone main", repo), "git push --dry-run", "failed")
+    assert box.scanner_calls() == []
+
+
+def test_a_slow_dry_run_is_a_refusal(box):
+    repo = _repo(box, "an ordinary change")
+    slow = box.tmp / "slowbin"
+    slow.mkdir()
+    (slow / "git").write_text("#!/bin/sh\nsleep 5\n")
+    (slow / "git").chmod(0o755)
+    r = _leak_cmd(box, "git push --no-verify origin main", repo, TEYLA_LEAK_GUARD_PUSH_TIMEOUT="1",
+                  PATH=f"{slow}:{box.bin}:/usr/bin:/bin")
+    refused(r, "git push --dry-run", "timed out")
+
+
+MERGES = [
+    "gh api -X PUT repos/o/r/pulls/7/merge -f commit_message='{x}'",
+    "gh api --method PUT repos/o/r/pulls/7/merge -F commit_title='{x}'",
+    "gh api repos/o/r/merges -f base=main -f head=topic -f commit_message='{x}'",
+    "gh api repos/o/r/pulls/7/merge --method=PUT --field commit_message='{x}'",
+    "gh\tapi -X PUT repos/o/r/pulls/7/merge -f commit_message='{x}'",
+    "gh pr merge 7 --merge --subject '{x}'",
+    "gh pr merge 7 --body '{x}'",
+    "gh pr merge 7 -b '{x}'",
+    "gh ap''i -X PUT repos/o/r/pulls/7/merge -f commit_message='{x}'",
+]
+
+
+@pytest.mark.parametrize("command", MERGES)
+def test_a_merge_publishes_its_title_and_message_and_they_are_scanned(box, command):        # HK-2
+    refused(box.run(command.format(x=TERM)), "teyla leak-guard")
+    allowed(box.run(command.format(x="merge the topic")))
+
+
+def test_a_merge_message_read_from_a_file_is_scanned(box):                                   # HK-2
+    (box.work / "msg.txt").write_text(f"about {TERM}\n")
+    refused(box.run("gh api -X PUT repos/o/r/pulls/7/merge -F commit_message=@msg.txt"), "gh api")
+    (box.work / "body.json").write_text(json.dumps({"commit_message": f"about {TERM}"}))
+    refused(box.run("gh api -X PUT repos/o/r/pulls/7/merge --input body.json"), "gh api")
+
+
+@pytest.mark.parametrize("command", ["gh api repos/o/r/pulls/7", "gh api repos/o/r/pulls/7/merge",
+                                     "gh api repos/o/r/pulls/7/commits --paginate", "gh api -X PUT repos/o/r/pulls/7/merge",
+                                     "gh pr merge 7 --merge", "gh pr view 7 --json mergeable"])
+def test_reads_and_a_merge_with_nothing_to_scan_pass(box, command):                          # HK-2
+    allowed(box.run(command))
+
+
+# --- the destination is what `git push --dry-run --porcelain` says it is ------------------------------------
+
+@pytest.mark.parametrize("command", ["git push --no-verify origin topic", "git push --no-verify origin +topic:topic",
+                                     "git push --no-verify origin topic:refs/heads/other", "git push --no-verify origin --all",
+                                     "git push --no-verify --mirror origin", "git push --no-verify origin 'refs/heads/*:refs/heads/*'",
+                                     "git push --no-verify origin main topic"])
+def test_every_source_ref_a_push_names_is_scanned_not_only_head(box, command):
+    repo = _two_branch_repo(box, f"note on {TERM}")
+    refused(_leak_cmd(box, command, repo), "pre-push gate")
+
+
+def test_a_push_of_a_clean_ref_and_a_deletion_pass(box):
+    repo = _two_branch_repo(box, f"note on {TERM}")
+    allowed(_leak_cmd(box, "git push --no-verify origin main", repo))
+    allowed(_leak_cmd(box, "git push --no-verify origin :gone", repo))
+
+
+def test_a_url_or_unknown_destination_is_not_compared_with_origin(box):
+    repo = _two_branch_repo(box, "clean too")
+    _g(repo, "commit", "-q", "--allow-empty", "-m", f"note on {TERM}")
+    _g(repo, "push", "-q", "origin", "main")                              # origin has the leaking commit already
+    allowed(_leak_cmd(box, "git push --no-verify origin main", repo))
+    refused(_leak_cmd(box, f"git push --no-verify {_bare(box, 'fresh')} main", repo), "pre-push gate")
+    _g(repo, "remote", "add", "other", _bare(box, "other"))              # a configured remote with no tracking refs
+    refused(_leak_cmd(box, "git push --no-verify other main", repo), "pre-push gate")
+
+
+def test_a_configured_remote_is_compared_with_its_own_tracking_refs(box):
+    repo = _repo(box, f"note on {TERM}", push_first=True)
+    _g(repo, "commit", "-q", "--allow-empty", "-m", "a clean follow-up")
+    allowed(_leak_cmd(box, "git push --no-verify origin main", repo))     # only the follow-up is new
+    assert box.scanner_calls()[-1].startswith("leak --commits")
+
+
+def test_a_url_push_with_no_remote_at_all_scans_the_full_history(box):
+    repo = _repo(box, f"old note on {TERM}")
+    _g(repo, "remote", "remove", "origin")
+    _g(repo, "commit", "-q", "--allow-empty", "-m", "newer clean change")
+    refused(_leak_cmd(box, f"git push --no-verify {_bare(box, 'fresh')} main", repo), "pre-push gate")
+
+
+def test_an_omitted_remote_follows_gits_push_remote_rules(box):
+    repo = _repo(box, f"note on {TERM}", push_first=True)
+    _g(repo, "remote", "add", "backup", _bare(box, "backup"))
+    allowed(_leak_cmd(box, "git push --no-verify", repo))                 # origin has it
+    _g(repo, "config", "branch.main.remote", "backup")
+    refused(_leak_cmd(box, "git push --no-verify", repo), "pre-push gate")
+    _g(repo, "config", "--unset", "branch.main.remote")
+    _g(repo, "config", "remote.pushDefault", "backup")
+    refused(_leak_cmd(box, "git push --no-verify", repo), "pre-push gate")
+    _g(repo, "config", "branch.main.pushRemote", "origin")                # pushRemote beats pushDefault
+    allowed(_leak_cmd(box, "git push --no-verify", repo))
+
+
+@pytest.mark.parametrize("command", ["git -c CORE.HOOKSPATH=/dev/null push origin main", "git -c Core.HooksPath=/dev/null push",
+                                     "git --config-env=CORE.HOOKSPATH=HOOKS push origin main"])
+def test_the_hooks_path_key_is_case_insensitive(box, command):
+    repo = _repo(box, f"note on {TERM}")
+    refused(_leak_cmd(box, command, repo), "pre-push gate")
+
+
+def test_the_hooks_path_key_is_case_insensitive_without_teyla(no_teyla_box):
+    r = no_teyla_box.run("git -c CORE.HOOKSPATH=/dev/null push origin main", **no_teyla_box.kw)
+    assert r.returncode == 2 and "cannot be scanned" in r.stderr, r.stderr
+
+
+# --- the six cases that came from re-implementing git's rules (each failed on the hand-written resolution) ----
+
+def test_configured_refspecs_count_even_when_a_push_url_makes_the_remote_unknown(box):
+    repo = _two_branch_repo(box, f"note on {TERM}")
+    _g(repo, "config", "remote.origin.push", "topic")
+    refused(_leak_cmd(box, "git push --no-verify origin", repo), "pre-push gate")
+    _g(repo, "config", "remote.origin.pushurl", _bare(box, "pushto"))
+    refused(_leak_cmd(box, "git push --no-verify origin", repo), "pre-push gate")
+
+
+def test_a_branch_name_keeps_its_case_when_config_picks_the_remote(box):
+    repo = _repo(box, f"note on {TERM}", push_first=True)
+    _g(repo, "checkout", "-q", "-b", "Feature")
+    _g(repo, "push", "-q", "origin", "Feature")                           # origin has it; backup never got it
+    _g(repo, "remote", "add", "backup", _bare(box, "backup"))
+    allowed(_leak_cmd(box, "git push --no-verify", repo))
+    _g(repo, "config", "branch.Feature.pushRemote", "backup")
+    refused(_leak_cmd(box, "git push --no-verify", repo), "pre-push gate")
+
+
+def test_a_command_local_remote_url_does_not_trust_the_tracking_refs(box):
+    repo = _repo(box, f"note on {TERM}", push_first=True)
+    allowed(_leak_cmd(box, "git push --no-verify origin main", repo))
+    refused(_leak_cmd(box, f"git -c remote.origin.url={_bare(box, 'elsewhere')} push --no-verify origin main", repo), "pre-push gate")
+    rewritten = _bare(box, "rewritten")
+    old = f"file://{box.tmp}/repo-origin.git"
+    refused(_leak_cmd(box, f"git -c url.{rewritten}.insteadOf={old} push --no-verify origin main", repo), "pre-push gate")
+    _g(repo, "config", f"url.{rewritten}.insteadOf", old)                 # the same rewrite in the repository's config
+    refused(_leak_cmd(box, "git push --no-verify origin main", repo), "pre-push gate")
+
+
+def test_a_command_local_push_refspec_adds_to_the_configured_ones(box):
+    repo = _two_branch_repo(box, f"note on {TERM}")
+    _g(repo, "config", "remote.origin.push", "topic")
+    refused(_leak_cmd(box, "git -c remote.origin.push=main push --no-verify origin", repo), "pre-push gate")
+
+
+def test_a_configured_tag_refspec_scans_the_tag_message(box):
+    repo = _repo(box, "clean", push_first=True)
+    _g(repo, "tag", "-a", "v1", "-m", f"release note on {TERM}")
+    _g(repo, "config", "remote.origin.push", "refs/tags/v1")
+    refused(_leak_cmd(box, "git push --no-verify origin", repo), "annotated tags")
+
+
+@pytest.mark.parametrize("command", ["git push --no-verify --follow-tags origin main", "git push --no-verify --tags origin",
+                                     "git push --no-verify origin v1", "git push --no-verify origin refs/tags/v1",
+                                     "git push --no-verify --mirror origin"])
+def test_an_annotated_tag_message_is_scanned_even_when_its_commit_is_clean(box, command):
+    repo = _repo(box, "clean", push_first=True)
+    _g(repo, "tag", "-a", "v1", "-m", f"release note on {TERM}")
+    refused(_leak_cmd(box, command, repo), "annotated tags")
+    allowed(_leak_cmd(box, "git push --no-verify origin main", repo))
+
+
+def test_all_pushes_branches_only_so_an_unrelated_tag_does_not_block_it(box):
+    repo = _repo(box, "clean", push_first=True)
+    _g(repo, "tag", "-a", "v1", "-m", f"release note on {TERM}")
+    _g(repo, "commit", "-q", "--allow-empty", "-m", "a clean follow-up")
+    allowed(_leak_cmd(box, "git push --no-verify --all origin", repo))
+
+
+
+# --- third review round -----------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("flag", ["--no-dry-run", "--no-porcelain", "--no-dry", "--dry-run --no-dry-run"])
+def test_a_flag_that_undoes_the_probe_cannot_hide_the_push(box, flag):
+    repo = _repo(box, f"note on {TERM}")
+    refused(_leak_cmd(box, f"git push --no-verify {flag} origin main", repo), "pre-push gate")
+
+
+def test_a_user_dry_run_that_the_probe_overrides_is_still_a_dry_run(box):
+    repo = _repo(box, f"note on {TERM}")
+    allowed(box.run("git push --no-verify --dry-run origin main", cwd_override=str(repo)))
+
+
+def test_each_push_url_of_a_remote_has_its_own_history(box):
+    repo = _repo(box, f"note on {TERM}", push_first=True)
+    _g(repo, "config", "--add", "remote.origin.pushurl", f"file://{box.tmp}/repo-origin.git")      # A: has it
+    _g(repo, "config", "--add", "remote.origin.pushurl", _bare(box, "empty-b"))                    # B: empty
+    refused(_leak_cmd(box, "git push --no-verify origin main", repo), "pre-push gate")
+
+
+@pytest.mark.parametrize("command", ["git push --no-verify origin refs/tags/v1:refs/releases/v1",
+                                     "git push --no-verify origin v1:notes/v1"])
+def test_a_tag_message_is_scanned_whatever_name_it_is_pushed_under(box, command):
+    repo = _repo(box, "clean", push_first=True)
+    _g(repo, "tag", "-a", "v1", "-m", f"release note on {TERM}")
+    refused(_leak_cmd(box, command, repo), "annotated tags")

@@ -536,7 +536,7 @@ def test_doctor_names_fixes_and_writes_summary(_home, monkeypatch):
     cs = doctor.checks(refresh_update=True, scan_repos=False)
     by = {c["name"]: c for c in cs}
     assert by["version"]["level"] == "FIX" and by["version"]["fix"] == "teyla update"
-    assert by["policy:file"]["level"] == "FIX"
+    assert by["policy:file"]["level"] == "INFO" and by["policy:file"]["detail"].startswith("off (pack policy")
     doctor.write_state(cs)
     s = doctor.DOCTOR_SUMMARY.read_text()
     assert s.startswith("teyla:") and "fix(es)" in s and "update available" in s
@@ -1104,6 +1104,9 @@ def test_doctor_never_prints_fix_for_a_harness_it_reports_absent(_home, monkeypa
     assert {"cursor", "codex", "grok", "hermes"} <= absent
     assert not [n for n, c in cs.items() if c["level"] == "FIX" and n.startswith("harness:") and n.split(":")[1] in absent]
     (_home / ".cursor").mkdir()
+    cs = {c["name"]: c for c in doctor.checks(refresh_update=False, scan_repos=False)}
+    assert cs["harness:cursor"]["level"] == "INFO" and cs["harness:cursor"]["detail"].startswith("off (pack policy")   # never synced: not chosen
+    config.set_value("features.chosen", "policy")
     cs = {c["name"]: c for c in doctor.checks(refresh_update=False, scan_repos=False)}
     assert cs["harness:cursor"]["level"] == "FIX" and cs["harness:cursor"]["fix"] == "teyla harness sync"
 

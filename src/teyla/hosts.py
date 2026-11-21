@@ -94,8 +94,16 @@ PLACEHOLDER_HOSTS = {"example.com", "example.org", "example.net", "example.test"
 PLACEHOLDER_SUFFIXES = (".local", ".localhost", ".invalid", ".example.com", ".example.org", ".example.net")
 NAMESPACE_HOSTS = {
     "www.w3.org", "schemas.android.com", "schemas.microsoft.com", "json-schema.org", "ns.adobe.com",
-    "purl.org", "xmlns.com", "schemas.xmlsoap.org", "www.sitemaps.org",
+    "purl.org", "xmlns.com", "schemas.xmlsoap.org", "www.sitemaps.org", "www.topografix.com", "www.opengis.net",
 }
+# An `http://` URI that names an XML namespace, a schema or a DTD is an identifier, never fetched. It is
+# recognised by what stands in front of it on the line: `xmlns="`, `xmlns:x="`, a `schemaLocation="` value
+# (namespace and schema pairs), or the inside of a `<!DOCTYPE ...>` (also in a Swift or Kotlin string,
+# where the quotes are escaped).
+_IDENTIFIER_CONTEXT = re.compile(
+    r"""(?:\bxmlns(?::[\w.-]+)?\s*=\s*\\?["']?"""
+    r"""|schemaLocation\s*=\s*\\?["'][^"']*"""
+    r"""|<!DOCTYPE[^>]*)$""", re.I)
 # Model and speech providers. A row for one of these needs a Consent cell when the table has that column.
 PROVIDER_HOSTS = (
     "api.openai.com", "*.openai.azure.com", "api.anthropic.com", "generativelanguage.googleapis.com",
@@ -249,6 +257,8 @@ class Scan:
             line = base_line + text.count("\n", 0, m.start())
             if host is None or not auth:
                 self.computed += 1
+                continue
+            if _IDENTIFIER_CONTEXT.search(text[max(0, m.start() - 200):m.start()]):
                 continue
             self.add(host, Ref(file, line, how, m.group(1).lower()), tail)
 

@@ -1,0 +1,165 @@
+{
+  "id": "mac.connect-iphone-failed",
+  "title": "Connect iPhone, failed",
+  "area": "mac",
+  "presentation": "sheet",
+  "device": {
+    "w": 440,
+    "h": 590
+  },
+  "source": [
+    "apps/mac/Teyla/UI/ConnectPhoneSheet.swift:97"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macSheet",
+    "p": {
+      "pad": 24,
+      "gap": 16,
+      "kids": [
+        {
+          "t": "text",
+          "v": "Connect iPhone",
+          "s": "mac-section",
+          "c": "text"
+        },
+        {
+          "t": "v",
+          "gap": 8,
+          "kids": [
+            {
+              "t": "h",
+              "gap": 8,
+              "align": "center",
+              "kids": [
+                {
+                  "t": "v",
+                  "w": 20,
+                  "h": 20,
+                  "r": 10,
+                  "fill": "primary",
+                  "align": "center",
+                  "justify": "center",
+                  "kids": [
+                    {
+                      "t": "text",
+                      "v": "1",
+                      "s": "mac-body",
+                      "c": "on-primary",
+                      "weight": 600
+                    }
+                  ]
+                },
+                {
+                  "t": "text",
+                  "v": "Install Teyla on your iPhone from TestFlight.",
+                  "s": "mac-card-title",
+                  "c": "text"
+                }
+              ]
+            },
+            {
+              "t": "h",
+              "gap": 8,
+              "align": "center",
+              "kids": [
+                {
+                  "t": "v",
+                  "w": 20,
+                  "h": 20,
+                  "r": 10,
+                  "fill": "primary",
+                  "align": "center",
+                  "justify": "center",
+                  "kids": [
+                    {
+                      "t": "text",
+                      "v": "2",
+                      "s": "mac-body",
+                      "c": "on-primary",
+                      "weight": 600
+                    }
+                  ]
+                },
+                {
+                  "t": "text",
+                  "v": "Point the iPhone camera at this code.",
+                  "s": "mac-card-title",
+                  "c": "text"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "t": "h",
+          "w": "fill",
+          "justify": "center",
+          "kids": [
+            {
+              "t": "v",
+              "w": 280,
+              "h": 280,
+              "gap": 8,
+              "kids": [
+                {
+                  "t": "h",
+                  "w": "fill",
+                  "gap": 6,
+                  "align": "start",
+                  "kids": [
+                    {
+                      "t": "icon",
+                      "n": "exclamationmark.triangle.fill",
+                      "size": 14,
+                      "c": "danger"
+                    },
+                    {
+                      "t": "text",
+                      "v": "The relay could not make a key. Check that the teyla command is installed.",
+                      "s": "mac-body",
+                      "c": "danger",
+                      "w": "fill"
+                    }
+                  ]
+                },
+                {
+                  "t": "use",
+                  "c": "macBtn",
+                  "p": {
+                    "text": "Try again"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "t": "text",
+          "v": "The code is the key to your Mac's questions. Show it only to your own iPhone. It hides after 5 minutes.",
+          "s": "mac-caption",
+          "c": "text-secondary",
+          "w": "fill"
+        },
+        {
+          "t": "h",
+          "w": "fill",
+          "align": "center",
+          "kids": [
+            {
+              "t": "spacer"
+            },
+            {
+              "t": "use",
+              "c": "macBtn",
+              "p": {
+                "text": "Done",
+                "kind": "prominent"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

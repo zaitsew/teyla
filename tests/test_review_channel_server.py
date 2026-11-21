@@ -365,8 +365,13 @@ def test_the_package_uses_only_the_standard_library():
 
 def test_no_private_host_or_address_in_the_package():
     import re
-    for f in (ROOT / "packages" / "review-channel").iterdir():
-        text = f.read_text()
+    for f in (ROOT / "packages" / "review-channel").rglob("*"):
+        if not f.is_file() or "__pycache__" in f.parts:
+            continue
+        try:
+            text = f.read_text()
+        except UnicodeDecodeError:
+            continue
         assert not re.search(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b", text.replace("127.0.0.1", "").replace("0.0.0.0", "")), f.name
 
 

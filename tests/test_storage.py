@@ -21,6 +21,7 @@ import pathlib
 import plistlib
 import subprocess
 import time
+import types
 
 import pytest
 
@@ -911,6 +912,57 @@ def test_derived_data_with_a_gone_workspace_is_safe_and_cleaned(tmp_path):
     assert not d.exists() and shared.exists()
     assert any(l.startswith("removed") and str(d) in l for l in lines)
     assert str(d) in storage.LOG_PATH.read_text()
+
+
+def test_orphan_derived_data_sizes_share_one_deadline(tmp_path, monkeypatch):
+    # Codex review P2: each orphan's `du` could take its own 600 s, one after another. All of them now
+    # share the probe limit; a folder not measured in time keeps its SAFE row, with no size, and is named.
+    root, _ = _derived(tmp_path, name="A-1")
+    _derived(tmp_path, name="B-2")
+    _derived(tmp_path, name="C-3")
+    clock = [0.0]
+    asked = []
+
+    def slow_du(path, seconds):
+        asked.append(seconds)
+        clock[0] += 8.0                       # every walk burns 8 s of the 20 s budget
+        return 4096
+
+    monkeypatch.setattr(storage, "du_within", slow_du)
+    monkeypatch.setattr(storage, "time", types.SimpleNamespace(
+        monotonic=lambda: clock[0], time=time.time, sleep=time.sleep))
+    rep = storage.scan(root=tmp_path / "code", cfg=_cfg(tmp_path), cwds=[], derived_root=root, repo_timeout=20)
+
+    rows = {r["name"]: r for r in rep["derived"]}
+    assert rows["A-1"]["bytes"] == 4096 and rows["B-2"]["bytes"] == 4096 and rows["C-3"]["bytes"] == 4096
+    assert asked[0] == 20 and asked[1] == 12 and asked[2] == 4     # each walk gets what is left
+    assert all(a <= 20 for a in asked)
+
+
+def test_orphan_derived_data_past_the_deadline_is_skipped_with_a_note(tmp_path, monkeypatch):
+    root, _ = _derived(tmp_path, name="A-1")
+    _derived(tmp_path, name="B-2")
+    clock = [0.0]
+
+    def slow_du(path, seconds):
+        clock[0] += 30.0                      # the first walk uses the whole budget
+        return None                           # and does not finish
+
+    monkeypatch.setattr(storage, "du_within", slow_du)
+    monkeypatch.setattr(storage, "time", types.SimpleNamespace(
+        monotonic=lambda: clock[0], time=time.time, sleep=time.sleep))
+    rep = storage.scan(root=tmp_path / "code", cfg=_cfg(tmp_path), cwds=[], derived_root=root, repo_timeout=20)
+
+    assert [r["bytes"] for r in rep["derived"]] == [None, None]
+    assert all(r["verdict"] == "SAFE" for r in rep["derived"])
+    assert any("DerivedData sizes skipped after 20 s" in line and "2 folder(s)" in line for line in rep["unanswered"])
+
+
+def test_du_within_returns_none_when_the_walk_times_out(tmp_path, monkeypatch):
+    def boom(*a, **k):
+        raise subprocess.TimeoutExpired("du", k["timeout"])
+    monkeypatch.setattr(storage.subprocess, "run", boom)
+    assert storage.du_within(tmp_path, 1) is None
 
 
 def test_derived_data_whose_workspace_exists_is_not_listed(tmp_path):

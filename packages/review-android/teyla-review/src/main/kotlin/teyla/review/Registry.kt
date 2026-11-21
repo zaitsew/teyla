@@ -54,17 +54,19 @@ internal class Registry {
      * Reads every entry now. Anchors keep registration order, at most 200, those with a box that touches the
      * window; each takes the screen of the smallest `reviewScreen` area that contains its centre. A private area
      * that is not on screen hides nothing. One whose box is not a finite number is kept as it is, and the
-     * painter hides the whole picture for it.
+     * painter hides the whole picture for it. [sensitivePx] are the window frames, in px, of the password, card and
+     * one-time-code fields found by `SensitiveViews`: they are masked like a `reviewPrivate()` area.
      */
-    fun snapshot(windowWidthDp: Double, windowHeightDp: Double, density: Double): Snapshot {
+    fun snapshot(windowWidthDp: Double, windowHeightDp: Double, density: Double, sensitivePx: () -> List<Frame> = { emptyList() }): Snapshot {
         val list = synchronized(lock) { entries.values.toList() }
         fun dp(f: Frame) = Frame(f.x / density, f.y / density, f.width / density, f.height / density)
         fun read(e: Entry): Frame? = try { e.bounds()?.let { dp(it) } } catch (t: Exception) { Frame(Double.NaN, 0.0, 0.0, 0.0) }
 
         val screens = list.filter { it.kind == Kind.Screen }.mapNotNull { e -> read(e)?.takeIf { it.isFinite }?.let { e.id to it } }
         val frames = ArrayList<Frame>()
-        for (e in list.filter { it.kind == Kind.Private }) {
-            val r = read(e) ?: continue
+        val areas = list.filter { it.kind == Kind.Private }.mapNotNull { read(it) } +
+            (try { sensitivePx().map { dp(it) } } catch (t: Exception) { listOf(Frame(Double.NaN, 0.0, 0.0, 0.0)) })
+        for (r in areas) {
             if (!r.isFinite) { frames.add(r); continue }
             if (r.width == 0.0 && r.height == 0.0) continue
             val g = grown(r)

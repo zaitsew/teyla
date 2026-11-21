@@ -1,0 +1,74 @@
+{
+  "id": "iphone.decisions-agents",
+  "title": "Decisions · Agents can settle",
+  "area": "iphone",
+  "presentation": "tab",
+  "source": [
+    "apps/ios/Teyla/UI/DecisionsView.swift:198"
+  ],
+  "root": {
+    "t": "use",
+    "c": "iosScreen",
+    "p": {
+      "linked": [
+        "home",
+        "decisions",
+        "products",
+        "more"
+      ],
+      "badges": {
+        "decisions": 6
+      },
+      "title": "Decisions",
+      "large": false,
+      "tab": "decisions",
+      "kids": [
+        {
+          "t": "use",
+          "c": "iosFold",
+          "p": {
+            "title": "Agents can settle 4",
+            "open": true,
+            "kids": [
+              {
+                "t": "use",
+                "c": "iosQuestionCard",
+                "p": {
+                  "product": "Pebble",
+                  "age": "2d",
+                  "question": "Use sentence case in the settings headings?",
+                  "context": "The headings mix title case and sentence case.",
+                  "proposed": "Sentence case everywhere.",
+                  "why": "It is the house style in the other apps.",
+                  "options": [
+                    "Sentence case",
+                    "Title case"
+                  ],
+                  "links": {
+                    "use": "iphone.decisions-sent"
+                  }
+                }
+              },
+              {
+                "t": "use",
+                "c": "iosQuestionCard",
+                "p": {
+                  "product": "Quill",
+                  "age": "3d",
+                  "question": "Bump the minimum iOS version to 18?",
+                  "context": "Two of the last ten sessions were on iOS 17.",
+                  "proposed": "Yes, raise it to 18.",
+                  "why": "Teyla counted 0 users below iOS 18.",
+                  "options": [
+                    "Raise to 18",
+                    "Keep 17"
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

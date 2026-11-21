@@ -235,14 +235,45 @@ final class ChannelDeliveryTests: XCTestCase {
 
     // MARK: captures from before app.product existed
 
-    func testACaptureWithoutAProductIsKeptLocallyNotSentAndNotRefused() async {
-        let old = record(product: nil)
+    func testACaptureWithoutAProductIsSentWithTheProductFromItsBundleId() async throws {
+        let old = record(product: nil)                                           // bundle id com.example.sampleapp
+        let outcome = await save(old, deliver: deliver())
+        XCTAssertEqual(outcome, .sent)
+        let sentJSON = try XCTUnwrap(StubProtocol.seen.first { $0.url.lastPathComponent == "capture.json" }?.body)
+        let app = try XCTUnwrap((try JSONSerialization.jsonObject(with: sentJSON) as? [String: Any])?["app"] as? [String: Any])
+        XCTAssertEqual(app["product"] as? String, "sampleapp")
+        XCTAssertNil(store().readLocalStatus(id: old.id)?.refused)
+    }
+
+    func testACaptureWithNoProductAndNoUsableBundleIdIsKeptLocallyNotSentAndNotRefused() async {
+        var app = Fixtures.app
+        app.bundleId = "unknown"
+        let old = Fixtures.record(app: app)
         let outcome = await save(old, deliver: deliver())
         XCTAssertEqual(outcome, .savedOnPhone)
         await retry(deliver())
-        XCTAssertTrue(StubProtocol.seen.isEmpty)                                 // the service would answer 403
-        XCTAssertNil(store().readLocalStatus(id: old.id)?.refused)               // and it is not marked for that
+        XCTAssertTrue(StubProtocol.seen.isEmpty)
+        XCTAssertNil(store().readLocalStatus(id: old.id)?.refused)
         XCTAssertNil(store().readLocalStatus(id: old.id)?.delivered)
+    }
+
+    func testTheProductFallbackIsTheLastPartOfTheBundleId() {
+        XCTAssertEqual(AppProbe.productFromBundleID("com.example.sampleapp"), "sampleapp")
+        XCTAssertEqual(AppProbe.productFromBundleID("com.example.Sample_App"), "sample-app")
+        XCTAssertEqual(AppProbe.productFromBundleID("sampleapp"), "sampleapp")
+        XCTAssertNil(AppProbe.productFromBundleID("com.example.2fast"))
+        XCTAssertNil(AppProbe.productFromBundleID("unknown"))
+        XCTAssertNil(AppProbe.productFromBundleID(""))
+        XCTAssertEqual(AppProbe.productFromBundleID("com.example." + String(repeating: "a", count: 60))?.count, 40)
+    }
+
+    func testWithProductKeepsAJSONThatHasOneAndFillsOneThatHasNone() throws {
+        let has = Data(#"{"app":{"bundle_id":"com.example.x","product":"mine"}}"#.utf8)
+        XCTAssertEqual(ChannelDelivery.withProduct(has), has)
+        let filled = try XCTUnwrap(ChannelDelivery.withProduct(Data(#"{"app":{"bundle_id":"com.example.Other"}}"#.utf8)))
+        XCTAssertTrue(ChannelDelivery.hasProduct(filled))
+        XCTAssertNil(ChannelDelivery.withProduct(Data(#"{"app":{}}"#.utf8)))
+        XCTAssertNil(ChannelDelivery.withProduct(Data("not json".utf8)))
     }
 
     func testAProductWithBadCharactersCountsAsNone() {

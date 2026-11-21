@@ -178,11 +178,17 @@ def cmd_whats_new(args) -> int:
                 if not bad:
                     print(f"ok: {len(locales)} locale(s) have a What's New for {args.version}")
             return 1 if bad else 0
-        since = args.since or newest_version_tag(repo)
+        from . import freshness
+        since = args.since
+        if not since:
+            # The baseline `teyla freshness` uses: the last commit that touched the store notes files, which is
+            # the last store version. A repo with no notes file yet starts at its newest version tag.
+            base = freshness.notes_baseline(repo)
+            since = base["sha"] if base else newest_version_tag(repo)
         if not since:
             print("whats-new: no version tag found; pass --since <git-ref>", file=sys.stderr)
             return 2
-        user, internal = split_changes(merged_changes(repo, since))
+        user, internal = freshness.draft_changes(repo, since)
         written, kept = [], []
         if args.write:
             d = _dir(repo, args.version)
@@ -216,7 +222,7 @@ def register(sp):
     q.add_argument("action", choices=["draft", "check"])
     q.add_argument("repo", help="path to the product repo")
     q.add_argument("--version", required=True)
-    q.add_argument("--since", help="draft: the git ref to start from (default: the newest version tag)")
+    q.add_argument("--since", help="draft: the git ref to start from (default: the last commit that touched the What's New files, else the newest version tag)")
     q.add_argument("--locales", help="comma separated, default en (e.g. en,ru,es)")
     q.add_argument("--write", action="store_true", help="draft: create docs/whats-new/<version>/<locale>.txt placeholders")
     q.add_argument("--json", action="store_true")

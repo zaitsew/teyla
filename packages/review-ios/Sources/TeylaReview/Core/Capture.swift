@@ -206,25 +206,37 @@ enum CaptureBuilder {
         anchors: [Anchor], text: String, input: CommentInfo.Input, language: String?,
         pngSHA256: String, pixelWidth: Int, pixelHeight: Int, scale: Double, microphone: MicrophoneInfo
     ) -> CaptureRecord {
+        // Every text field goes through the scrub rules (ReviewScrub) before it is written: the file, the relay and
+        // the channel all carry what this builds.
+        let clip = ReviewScrub.clip
+        let strings: (Anchor) -> [String]? = { a in
+            a.strings.isEmpty ? nil : Array(a.strings.prefix(ReviewFormat.maxStrings)).map { clip($0, 200) }
+        }
         var elementInfo: ElementInfo?
         if let a = element {
             elementInfo = ElementInfo(
-                id: a.id, matchedBy: .anchor, screen: a.screen, parent: a.parent, role: a.role,
-                bounds: Rect(a.bounds), strings: a.strings.isEmpty ? nil : Array(a.strings.prefix(ReviewFormat.maxStrings)),
-                source: SourceInfo(file: a.file, line: a.line))
+                id: clip(a.id, 200), matchedBy: .anchor, screen: a.screen.map { clip($0, 200) }, parent: a.parent.map { clip($0, 200) },
+                role: a.role, bounds: Rect(a.bounds), strings: strings(a), source: SourceInfo(file: a.file, line: a.line))
         } else if let ident = accessibilityElementID, !ident.isEmpty {
-            elementInfo = ElementInfo(id: ident, matchedBy: .accessibilityIdentifier, screen: nil, parent: nil, role: nil,
+            elementInfo = ElementInfo(id: clip(ident, 200), matchedBy: .accessibilityIdentifier, screen: nil, parent: nil, role: nil,
                                       bounds: nil, strings: nil, source: nil)
         }
         let infos = anchors.prefix(ReviewFormat.maxAnchors).map { a in
-            AnchorInfo(id: a.id, screen: a.screen, parent: a.parent, role: a.role, bounds: Rect(a.bounds),
-                       strings: a.strings.isEmpty ? nil : Array(a.strings.prefix(ReviewFormat.maxStrings)),
-                       source: SourceInfo(file: a.file, line: a.line))
+            AnchorInfo(id: clip(a.id, 200), screen: a.screen.map { clip($0, 200) }, parent: a.parent.map { clip($0, 200) },
+                       role: a.role, bounds: Rect(a.bounds), strings: strings(a), source: SourceInfo(file: a.file, line: a.line))
+        }
+        var tap = tap
+        if var t = tap {
+            let ident = t.accessibilityIdentifier.map { clip($0, 200) }
+            let label = t.accessibilityLabel.map(ReviewScrub.scrubLabel)
+            t.accessibilityIdentifier = ident
+            t.accessibilityLabel = label
+            tap = t
         }
         return CaptureRecord(
             v: ReviewFormat.version, id: id.uuidString.lowercased(), created: CaptureCoding.iso(now), device: device,
-            app: app, environment: environment, screen: screen, tap: tap, region: region, element: elementInfo, anchors: Array(infos),
-            comment: CommentInfo(text: String(text.prefix(ReviewFormat.maxCommentLength)), input: input, language: language),
+            app: app, environment: environment, screen: screen.map { clip($0, 200) }, tap: tap, region: region, element: elementInfo, anchors: Array(infos),
+            comment: CommentInfo(text: String(ReviewScrub.scrub(text).prefix(ReviewFormat.maxCommentLength)), input: input, language: language),
             screenshot: ScreenshotInfo(file: ReviewFormat.pngName, width: pixelWidth, height: pixelHeight, scale: scale, sha256: pngSHA256),
             microphone: microphone)
     }

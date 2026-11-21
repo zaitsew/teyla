@@ -337,6 +337,7 @@ def test_a_process_gone_before_the_watch_is_not_signalled(tmp_path):
     assert m.signals == [] and res["killed"] == []
 
 
+@pytest.mark.real_process_calls     # signals its own child process only
 def test_the_exit_watch_follows_a_real_process():
     import select
     import subprocess

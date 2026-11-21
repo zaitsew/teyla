@@ -70,6 +70,7 @@ import datetime as _dt
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -129,6 +130,9 @@ def _platform_path() -> str:
     return str(platform_mod.PLATFORM_PATH).replace(str(pathlib.Path.home()), "~")
 
 
+GCLOUD_LOGIN = re.compile(r"gcloud could not print|gcloud login has expired", re.I)
+
+
 def run_tool(tool: pathlib.Path, package: str) -> dict:
     """The tool's JSON payload. Raises RuntimeError with a one-line reason on any failure."""
     cmd = [str(tool), "status", "--package", package, "--json"]
@@ -142,6 +146,9 @@ def run_tool(tool: pathlib.Path, package: str) -> dict:
         # The first line is the reason (`error: gcloud could not print an access token`); what follows is a hint.
         head = ((r.stderr or r.stdout or "").strip().splitlines() or [""])[0].strip()[:200]
         head = head.removeprefix("error:").strip()
+        if GCLOUD_LOGIN.search(head):
+            # The tool runs `gcloud auth print-access-token` (your own login), so `gcloud auth login` is the fix.
+            head += " (fix: run `gcloud auth login`, then retry)"
         raise RuntimeError(f"the release tool exited {r.returncode}" + (f": {head}" if head else ""))
     try:
         data = json.loads(r.stdout)

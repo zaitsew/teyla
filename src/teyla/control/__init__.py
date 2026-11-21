@@ -67,6 +67,13 @@ def cmd_receipts(args) -> int:
     from . import state as S
     rows = S.receipts_for(args.ref)
     if not rows:
+        from .engine import RunRefused, resolve
+        try:
+            resolve(args.ref)
+        except RunRefused as e:   # a plain routine has no receipts, ever: say why instead of "no receipts"
+            if "control-plane routine" in str(e):
+                print(f"teyla receipts: {e}", file=sys.stderr)
+                return 1
         print(f"no receipts for {args.ref} in {S.receipts_path()}")
         return 0
     rows = rows[-(args.n or 10):]
@@ -115,9 +122,12 @@ def cmd_promote(args) -> int:
         return 1
 
 
+_CP = "A control-plane routine is a `[[routine]]` with a `step` table in teyla.toml: Teyla runs it itself."
+
+
 def register(sp):
     """Add every control-plane subcommand to `cli.py`'s argparse subparsers object."""
-    q = sp.add_parser("run", help="run one control-plane routine: draft, gate, act, receipt")
+    q = sp.add_parser("run", description=_CP, help="run one control-plane routine (a [[routine]] with a `step` that Teyla runs itself): draft, gate, act, receipt")
     q.set_defaults(fn=cmd_run)
     q.add_argument("ref", help="<product>:<routine>, as named in the product's teyla.toml")
     q.add_argument("--dry", action="store_true", help="print the plan — run id, key, grants, rules, steps — and create nothing")
@@ -157,14 +167,14 @@ def register(sp):
         if name == "install":
             a.add_argument("--no-load", action="store_true", help="write the plist but do not launchctl it")
 
-    q = sp.add_parser("promote", help="move a routine to gate B or C, on evidence from its receipts")
+    q = sp.add_parser("promote", description=_CP, help="move a control-plane routine (a [[routine]] with a `step`) to gate B or C, on evidence from its receipts")
     q.set_defaults(fn=cmd_promote)
     q.add_argument("ref", help="<product>:<routine>")
     q.add_argument("--gate", required=True, choices=["B", "C"])
     q.add_argument("--force", action="store_true", help="promote without the evidence; recorded as forced")
     q.add_argument("--note", help="why you forced it")
 
-    q = sp.add_parser("receipts", help="the receipts for one routine, newest last")
+    q = sp.add_parser("receipts", description=_CP, help="the receipts for one control-plane routine (a [[routine]] with a `step`), newest last")
     q.set_defaults(fn=cmd_receipts)
     q.add_argument("ref", help="<product>:<routine>")
     q.add_argument("-n", type=int, default=10)

@@ -1,0 +1,250 @@
+{
+  "id": "mac.settings",
+  "title": "Settings",
+  "area": "mac",
+  "presentation": "tab",
+  "device": {
+    "w": 1280,
+    "h": 800
+  },
+  "source": [
+    "apps/mac/Teyla/UI/SettingsPageView.swift:7",
+    "apps/mac/Teyla/Core/TeylaConfig.swift:282"
+  ],
+  "root": {
+    "t": "use",
+    "c": "macWindow",
+    "p": {
+      "selected": "settings",
+      "badges": {
+        "today": 4,
+        "decisions": 4,
+        "operations": 1
+      },
+      "linked": [
+        "today",
+        "home",
+        "decisions",
+        "products",
+        "settings"
+      ],
+      "kids": [
+        {
+          "t": "use",
+          "c": "macPageHeader",
+          "p": {
+            "title": "Settings",
+            "context": "How Teyla is set up on this Mac. Grey values are defaults.",
+            "trailing": {
+              "t": "use",
+              "c": "macBtn",
+              "p": {
+                "text": "Read again"
+              }
+            }
+          }
+        },
+        {
+          "t": "h",
+          "w": "fill",
+          "gap": 12,
+          "kids": [
+            {
+              "t": "use",
+              "c": "tile",
+              "p": {
+                "label": "Keys set",
+                "value": "6",
+                "detail": "In the settings file."
+              }
+            },
+            {
+              "t": "use",
+              "c": "tile",
+              "p": {
+                "label": "Work mode",
+                "value": "Off",
+                "detail": "No network, no self-update."
+              }
+            },
+            {
+              "t": "use",
+              "c": "tile",
+              "p": {
+                "label": "Automatic clean-up",
+                "value": "On",
+                "detail": "Finished worktrees and build output."
+              }
+            },
+            {
+              "t": "use",
+              "c": "tile",
+              "p": {
+                "label": "Updates",
+                "value": "On",
+                "detail": "Follows published releases."
+              }
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 8,
+          "kids": [
+            {
+              "t": "use",
+              "c": "macSection",
+              "p": {
+                "title": "Folders",
+                "note": "Where Teyla looks for code and files its reports."
+              }
+            },
+            {
+              "t": "use",
+              "c": "macRowGroup",
+              "p": {
+                "kids": [
+                  {
+                    "t": "use",
+                    "c": "macRow",
+                    "p": {
+                      "title": "Code folder",
+                      "detail": "Where your repositories live.",
+                      "value": "~/repos"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "macRow",
+                    "p": {
+                      "title": "Ops folder",
+                      "detail": "Everything that is not a code repository.",
+                      "value": "~/ops"
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "macRow",
+                    "p": {
+                      "title": "Reports folder",
+                      "detail": "Where the weekly reports are filed.",
+                      "value": "Inside the ops folder",
+                      "dim": true
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 8,
+          "kids": [
+            {
+              "t": "use",
+              "c": "macSection",
+              "p": {
+                "title": "Updates",
+                "note": "How Teyla keeps itself current."
+              }
+            },
+            {
+              "t": "use",
+              "c": "macRowGroup",
+              "p": {
+                "kids": [
+                  {
+                    "t": "use",
+                    "c": "macRow",
+                    "p": {
+                      "title": "Updates",
+                      "detail": "Which releases the daily check installs.",
+                      "value": "Published releases",
+                      "dim": true
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "macRow",
+                    "p": {
+                      "title": "Update source",
+                      "detail": "The GitHub repository releases come from.",
+                      "value": "zaitsew/teyla",
+                      "dim": true
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "macRow",
+                    "p": {
+                      "title": "Pinned version",
+                      "detail": "Updates stop at this version.",
+                      "value": "Not pinned",
+                      "dim": true
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "macRow",
+                    "p": {
+                      "title": "Work mode",
+                      "detail": "No network, no self-update, no code from repositories.",
+                      "value": "Off",
+                      "dim": true
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "t": "v",
+          "w": "fill",
+          "gap": 8,
+          "kids": [
+            {
+              "t": "use",
+              "c": "macSection",
+              "p": {
+                "title": "Machine guard",
+                "note": "What keeps parallel agents from overloading this Mac."
+              }
+            },
+            {
+              "t": "use",
+              "c": "macRowGroup",
+              "p": {
+                "kids": [
+                  {
+                    "t": "use",
+                    "c": "macRow",
+                    "p": {
+                      "title": "Guard",
+                      "detail": "Makes heavy work wait when the Mac is busy.",
+                      "value": "On",
+                      "dim": true
+                    }
+                  },
+                  {
+                    "t": "use",
+                    "c": "macRow",
+                    "p": {
+                      "title": "Simulators at once",
+                      "detail": "More than this reads as busy. 0 means no limit.",
+                      "value": "2",
+                      "dim": true
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
