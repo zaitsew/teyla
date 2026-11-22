@@ -343,6 +343,13 @@ def test_the_hook_passes_primary_unmapped_and_shared_files(repo, rel):
     assert decide(repo, rel) == (0, "")
 
 
+def test_an_overlapping_primary_pattern_does_not_hide_a_closed_secondary(repo):
+    repo.ledger()
+    (repo.dir / "teyla.toml").write_text(TOML.replace('macos = ["apps/mac/**"]', 'macos = ["apps/**"]'))
+    assert decide(repo, "apps/ios/App.swift")[0] == 2
+    assert decide(repo, "apps/mac/A.swift") == (0, "")
+
+
 def test_the_hook_passes_an_open_train_and_an_override(repo):
     repo.ledger(train={"ios": {"state": "open", "base": "b", "tip": "c", "opened": PAST, "expires": D(2026, 11, 30)}})
     assert decide(repo, "apps/ios/App.swift")[0] == 0
