@@ -33,6 +33,7 @@ import uuid
 from . import answer, config, state
 from .control import state as control_state
 
+# the Codex CLI on the ChatGPT plan refuses gpt-6.2 (2026-11-22); move when `codex` accepts it
 CODEX_MODEL = "gpt-6.1-sol"
 CLAUDE_MODEL = "claude-sonnet-5-5"
 DEFAULT_PERMISSION_MODE = "acceptEdits"

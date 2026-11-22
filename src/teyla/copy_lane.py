@@ -60,6 +60,7 @@ import tempfile
 from . import copy_catalogs, copy_lexicon as lex, design_md, invisible, net, state, taste, voice
 
 MODEL = "claude-sonnet-5-5"                   # the ladder's default worker (POLICY section 1)
+# the Codex CLI on the ChatGPT plan refuses gpt-6.2 (2026-11-22); move when `codex` accepts it
 JUDGE_MODEL = "gpt-6.1-sol"                   # the second family for review (POLICY section 2)
 WRITE_TIMEOUT_S = 300
 JUDGE_TIMEOUT_S = 900
