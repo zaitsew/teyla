@@ -50,7 +50,10 @@ def parse(text: str) -> dict | None:
 
 def validate(data: dict) -> str | None:
     """What is wrong with a parsed ledger, or None: every train needs a known state."""
-    for plat, t in (data.get("train") or {}).items():
+    trains = data.get("train") or {}
+    if not isinstance(trains, dict):
+        return "train is not a table"
+    for plat, t in trains.items():
         if not isinstance(t, dict) or str(t.get("state") or "closed") not in STATES:
             return f"train.{plat} has an unknown state"
     return None

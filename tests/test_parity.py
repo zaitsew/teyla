@@ -558,3 +558,11 @@ def test_a_new_branch_base_is_the_parent_of_its_oldest_new_commit(repo):
     repo.commit("two", {"b.txt": "2\n"})
     groups = pg.files_pre_push(repo.dir, f"refs/heads/side {repo.rev()} refs/heads/side {'0' * 40}\n", "origin")
     assert groups[0][3] == tip_of_main
+
+
+def test_a_train_that_is_not_a_table_is_a_broken_ledger_not_a_crash(repo, capsys):
+    repo.commit("odd ledger", {"docs/parity.toml": 'train = "broken"\n', "apps/mac/A.swift": "a\n"})
+    assert check(repo, capsys)[0] == 0                        # a primary-only push is not blocked
+    repo.commit("and a port", {"apps/ios/A.swift": "a\n"})
+    code, out = check(repo, capsys)
+    assert code == 1 and "train is not a table" in out
