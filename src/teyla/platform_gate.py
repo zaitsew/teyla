@@ -133,6 +133,13 @@ def _git_z(repo: pathlib.Path, *args: str) -> tuple[int, list[str], str]:
     return p.returncode, names, p.stderr.decode("utf-8", "replace").strip()
 
 
+def _base_of(label: str) -> str | None:
+    """The base revision of a range label `A..B`, `A...B`; None for a new branch (`new:...`) or no range."""
+    if not label or label.startswith("new:") or ".." not in label:
+        return None
+    return label.split("..")[0] or None
+
+
 def _rev_of(rng: str | None) -> str:
     """The revision whose teyla.toml counts for `A..B` or `A...B`: B (HEAD when empty); else HEAD."""
     if rng and ".." in rng:
@@ -159,10 +166,26 @@ def files_default(repo: pathlib.Path) -> tuple[list[str], str]:  # the range is 
     return [], ""
 
 
-def files_pre_push(repo: pathlib.Path, text: str, remote: str | None) -> list[tuple[list[str], str, str]]:
-    """Per pushed ref `(files, label, local sha)`: the files touched by the commits the push adds, from git's
-    `<lref> <lsha> <rref> <rsha>` lines. The sha names the revision whose teyla.toml applies."""
-    groups: list[tuple[list[str], str, str]] = []
+def _new_branch_base(repo: pathlib.Path, lsha: str, excl: list[str]) -> str | None:
+    """Where a new branch starts: the parent of its oldest new commit (the commits no remote-tracking ref has),
+    else the merge-base with origin/main."""
+    rc, names, _ = _git_z(repo, "rev-list", "-z", "--reverse", "--topo-order", lsha, "--not", *excl)
+    if rc == 0 and names:
+        parent = _git(repo, "rev-parse", "--verify", "-q", names[0] + "^1^{commit}")
+        if parent.returncode == 0 and parent.stdout.strip():
+            return parent.stdout.strip()
+    for ref in ("origin/main", "main"):
+        mb = _git(repo, "merge-base", ref, lsha)
+        if mb.returncode == 0 and mb.stdout.strip():
+            return mb.stdout.strip()
+    return None
+
+
+def files_pre_push(repo: pathlib.Path, text: str, remote: str | None) -> list[tuple[list[str], str, str, str | None]]:
+    """Per pushed ref `(files, label, local sha, base)`: the files touched by the commits the push adds, from git's
+    `<lref> <lsha> <rref> <rsha>` lines. The sha names the revision whose teyla.toml applies; the base is the
+    revision the range starts from (the remote tip, or for a new branch the parent of its oldest new commit)."""
+    groups: list[tuple[list[str], str, str, str | None]] = []
     for line in text.splitlines():
         parts = line.split()
         if len(parts) < 4:
@@ -171,15 +194,16 @@ def files_pre_push(repo: pathlib.Path, text: str, remote: str | None) -> list[tu
         if not set(lsha) - ZEROS:          # a deletion pushes no commits
             continue
         if set(rsha) - ZEROS and _git(repo, "cat-file", "-e", rsha + "^{commit}").returncode == 0:
-            excl, label = [rsha], f"{rsha[:12]}..{lsha[:12]}"
+            excl, label, base = [rsha], f"{rsha[:12]}..{lsha[:12]}", rsha
         else:                               # new branch: what no remote-tracking ref has
             excl = ["--remotes=" + remote] if remote else ["--remotes"]
             label = f"new:{lsha[:12]}"
+            base = _new_branch_base(repo, lsha, excl)
         rc, names, err = _git_z(repo, "log", "--name-only", "-z", "--no-renames", "--format=", "-m", lsha,
                                 "--not", *excl)
         if rc:
             raise GateError(f"git log for {label} failed: {err}")
-        groups.append((list(dict.fromkeys(names)), label, lsha))
+        groups.append((list(dict.fromkeys(names)), label, lsha, base))
     return groups
 
 
@@ -200,8 +224,13 @@ WARN_NO_LEDGER = "WARN platform gate: no parity ledger: run `teyla parity init`;
 
 
 def evaluate(manifest: dict | None, files: list[str], ledger: dict | None = None,
-             today: datetime.date | None = None) -> dict:
-    """Pure: the manifest, the changed files and the parity ledger in, the verdict out. No git, no I/O."""
+             today: datetime.date | None = None, base_ledger: dict | None = None,
+             ledger_error: str | None = None) -> dict:
+    """Pure: the manifest, the changed files and the parity ledger in, the verdict out. No git, no I/O.
+
+    `base_ledger` is the ledger at the range's base: a train that was open when the range started may close
+    inside it (`parity sync`), so a platform open at either end passes. `ledger_error` is a committed ledger
+    that does not parse: a touched secondary platform then fails closed."""
     pz = (manifest or {}).get("productize")
     paths = pz.get("paths") if isinstance(pz, dict) else None
     if not isinstance(paths, dict) or not paths:
@@ -231,12 +260,16 @@ def evaluate(manifest: dict | None, files: list[str], ledger: dict | None = None
             continue
         problem = trigger_problem(triggers, plat)
         is_open, reason = parity.gate_from(ledger, plat, today)
+        if not is_open and base_ledger is not None:
+            is_open = parity.gate_from(base_ledger, plat, today)[0]
+        if ledger_error:
+            is_open, reason = False, parity.broken(ledger_error)
         if problem or not is_open:
             v = {"platform": plat, "files": fs, "problem": problem or "", "gate": None if is_open else reason}
             if problem:
                 v["add"] = f'{plat} = "YYYY-MM-DD: <who asked, why>"'
             violations.append(v)
-    warnings = [] if ledger is not None else [WARN_NO_LEDGER]
+    warnings = [] if (ledger is not None or ledger_error) else [WARN_NO_LEDGER]
     return {"ok": not violations, "checked": True, "primary": primary, "touched": sorted(touched),
             "violations": violations, "warnings": warnings}
 
@@ -301,17 +334,19 @@ def run(repo: pathlib.Path, *, rng: str | None = None, pre_push: bool = False, r
     if pre_push:
         groups = files_pre_push(repo, stdin_text, remote)
     elif rng:
-        groups = [(files_in_range(repo, rng), rng, _rev_of(rng))]
+        groups = [(files_in_range(repo, rng), rng, _rev_of(rng), _base_of(rng))]
     else:
         files, used = files_default(repo)
-        groups = [(files, used, "HEAD")]
+        groups = [(files, used, "HEAD", _base_of(used))]
     result = {"ok": True, "checked": False, "note": NO_MAP, "violations": []}
     merged: dict[str, dict] = {}
-    for files, used, rev in groups:
+    for files, used, rev, base in groups:
         manifest = load_manifest(repo, rev)
         if manifest is None or not isinstance(manifest.get("productize"), dict):
             continue
-        r = evaluate(manifest, files, parity.load_at(repo, rev), today)
+        base_ledger = parity.load_at(repo, base) if base else None
+        ledger, err = parity.read_at(repo, rev)
+        r = evaluate(manifest, files, ledger, today, base_ledger, err)
         if not r["checked"]:
             result["note"] = r["note"]
             continue

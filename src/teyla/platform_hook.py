@@ -47,7 +47,9 @@ def decide(payload: dict, today: datetime.date | None = None) -> tuple[int, str]
     root = _root_of(path)
     if root is None:
         return 0, ""
-    ledger = parity.load(root)
+    ledger, err = parity.read(root)
+    if err:                                        # a broken ledger never breaks a tool call, but it is said
+        return 0, f"platform gate: warning: {parity.broken(err)} (the edit hook is not checking)\n"
     if ledger is None:
         return 0, ""
     manifest = parity.read_manifest(root)

@@ -453,3 +453,116 @@ def test_session_start_prints_the_parity_line(repo, tmp_path):
 def test_status_line_is_silent_without_a_ledger(repo, capsys):
     code, out = repo.run(capsys, "status", "--line")
     assert code == 0 and out == ""
+
+
+# --- a train's own final push, and a ledger that does not parse ------------------------------
+
+OPEN = {"ios": {"state": "open", "base": "b", "tip": "c", "opened": PAST, "expires": FAR}}
+
+
+def ledger_text(repo):
+    return (repo.dir / "docs/parity.toml").read_text()
+
+
+def test_a_train_may_close_inside_the_range_that_ported_under_it(repo, capsys):
+    repo.ledger(train=OPEN)
+    repo.commit("open the train", {"docs/parity.toml": ledger_text(repo)})
+    start = repo.rev()
+    repo.commit("port", {"apps/ios/A.swift": "a\n"})
+    parity.sync(repo.dir, "ios", repo.rev())            # the last commit closes the train
+    repo.commit("parity sync", {"docs/parity.toml": ledger_text(repo)})
+    assert parity.load(repo.dir)["train"]["ios"]["state"] == "closed"
+    code = cli.main(["platform", "check", "--repo", str(repo.dir), "--range", f"{start}..{repo.rev()}"])
+    assert code == 0, capsys.readouterr().out
+
+
+def test_a_train_closed_before_the_range_still_refuses_it(repo, capsys):
+    repo.ledger()
+    repo.commit("closed ledger", {"docs/parity.toml": ledger_text(repo)})
+    start = repo.rev()
+    repo.commit("port", {"apps/ios/A.swift": "a\n"})
+    assert cli.main(["platform", "check", "--repo", str(repo.dir), "--range", f"{start}..{repo.rev()}"]) == 1
+
+
+def test_pre_push_judges_an_update_against_the_remote_tip_ledger(repo, capsys, monkeypatch):
+    repo.ledger(train=OPEN)
+    repo.commit("open", {"docs/parity.toml": ledger_text(repo)})
+    remote_tip = repo.rev()
+    repo.commit("port", {"apps/ios/A.swift": "a\n"})
+    parity.sync(repo.dir, "ios", repo.rev())
+    repo.commit("sync", {"docs/parity.toml": ledger_text(repo)})
+    line = f"refs/heads/main {repo.rev()} refs/heads/main {remote_tip}\n"
+    monkeypatch.setattr(sys, "stdin", io.StringIO(line))
+    assert cli.main(["platform", "check", "--repo", str(repo.dir), "--pre-push"]) == 0
+
+
+def test_a_ledger_that_does_not_parse_fails_the_push_closed(repo, capsys):
+    repo.commit("broken ledger and a port", {"docs/parity.toml": "[train\n", "apps/ios/A.swift": "a\n"})
+    code, out = check(repo, capsys)
+    assert code == 1
+    assert "docs/parity.toml does not parse: " in out and "fix it or `teyla parity init`" in out
+    assert "WARN" not in out                                  # not read as absent
+
+
+def test_an_unknown_train_state_fails_the_push_closed(repo, capsys):
+    repo.commit("odd state", {"docs/parity.toml": '[train.ios]\nstate = "ajar"\n', "apps/ios/A.swift": "a\n"})
+    code, out = check(repo, capsys)
+    assert code == 1 and "train.ios has an unknown state" in out
+
+
+def test_a_broken_ledger_does_not_block_a_push_that_touches_no_secondary(repo, capsys):
+    repo.commit("broken ledger, primary change", {"docs/parity.toml": "[train\n", "apps/mac/A.swift": "a\n"})
+    assert check(repo, capsys)[0] == 0
+
+
+def test_the_hook_stays_open_on_a_broken_ledger_and_says_so(repo):
+    (repo.dir / "docs").mkdir()
+    (repo.dir / "docs" / "parity.toml").write_text("[train\n")
+    code, text = decide(repo, "apps/ios/App.swift")
+    assert code == 0 and text.count("\n") == 1
+    assert "docs/parity.toml does not parse" in text and "warning" in text
+    assert ph.main(io.StringIO(json.dumps(payload(repo, "apps/ios/App.swift")))) == 0
+
+
+def _new_branch_push(repo, monkeypatch, capsys, base_train):
+    """A new branch `train` cut from a main that a remote-tracking ref already has; the branch ports and syncs."""
+    repo.ledger(train=base_train)
+    repo.commit("ledger", {"docs/parity.toml": ledger_text(repo)})
+    repo.git("update-ref", "refs/remotes/origin/main", repo.rev())
+    repo.git("checkout", "-q", "-b", "train")
+    repo.commit("port", {"apps/ios/A.swift": "a\n"})
+    parity.sync(repo.dir, "ios", repo.rev())
+    repo.commit("sync", {"docs/parity.toml": ledger_text(repo)})
+    line = f"refs/heads/train {repo.rev()} refs/heads/train {'0' * 40}\n"
+    monkeypatch.setattr(sys, "stdin", io.StringIO(line))
+    code = cli.main(["platform", "check", "--repo", str(repo.dir), "--pre-push", "--remote", "origin"])
+    out = capsys.readouterr()
+    return code, out.out + out.err
+
+
+def test_a_new_train_branch_that_ports_and_syncs_passes(repo, capsys, monkeypatch):
+    code, out = _new_branch_push(repo, monkeypatch, capsys, OPEN)
+    assert code == 0, out
+
+
+def test_a_new_branch_with_the_train_closed_at_base_and_tip_is_refused(repo, capsys, monkeypatch):
+    code, out = _new_branch_push(repo, monkeypatch, capsys, {"ios": {"state": "closed", "base": "b"}})
+    assert code == 1 and "gate closed" in out
+
+
+def test_a_new_branch_base_is_the_parent_of_its_oldest_new_commit(repo):
+    repo.git("update-ref", "refs/remotes/origin/main", repo.rev())
+    tip_of_main = repo.rev()
+    repo.git("checkout", "-q", "-b", "side")
+    repo.commit("one", {"a.txt": "1\n"})
+    repo.commit("two", {"b.txt": "2\n"})
+    groups = pg.files_pre_push(repo.dir, f"refs/heads/side {repo.rev()} refs/heads/side {'0' * 40}\n", "origin")
+    assert groups[0][3] == tip_of_main
+
+
+def test_a_train_that_is_not_a_table_is_a_broken_ledger_not_a_crash(repo, capsys):
+    repo.commit("odd ledger", {"docs/parity.toml": 'train = "broken"\n', "apps/mac/A.swift": "a\n"})
+    assert check(repo, capsys)[0] == 0                        # a primary-only push is not blocked
+    repo.commit("and a port", {"apps/ios/A.swift": "a\n"})
+    code, out = check(repo, capsys)
+    assert code == 1 and "train is not a table" in out
