@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Codex routes go back to GPT-6.1 Sol.** The Codex CLI on a ChatGPT login refuses every gpt-6.2 model, so dispatch, `copy judge` and `ux judge --filter` use `gpt-6.1-sol` again. The `gpt-6.2-*` price rows stay for API transcripts.
+
 ## 0.60.0 — 2026-11-22
 
 - **The parity push check no longer refuses a train's own final push, and a broken ledger no longer reads as absent.** A range passes for a platform whose train is open at the range's base or at the pushed revision, so a port followed by `teyla parity sync` in the same push goes through. For a new branch the base is the parent of its oldest new commit (the commits no remote-tracking ref has), else the merge-base with `origin/main`. A committed `docs/parity.toml` that does not parse, or has a train with an unknown state, fails the push check closed when a secondary platform is touched ("docs/parity.toml does not parse: ...; fix it or `teyla parity init`"). The edit hook stays fail-open and prints one warning line.

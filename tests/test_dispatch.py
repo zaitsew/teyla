@@ -76,7 +76,7 @@ def test_codex_dispatch_cuts_a_worktree_from_origin_and_starts_a_lane(world):
     assert subprocess.run(["git", "-C", str(wt), "config", f"branch.{branch}.merge"], capture_output=True).returncode != 0
     c = world.spawned[0]
     assert c["cwd"] == str(wt)
-    assert c["cmd"][:6] == ["/ops/bin/codex-lane", "-m", "gpt-6.2-sol", "-C", str(wt), "-s"]
+    assert c["cmd"][:6] == ["/ops/bin/codex-lane", "-m", "gpt-6.1-sol", "-C", str(wt), "-s"]
     assert c["cmd"][6] == "workspace-write"
     assert c["cmd"][-2] == "--" and c["cmd"][-1] == dispatch.HEADER + "\n\nFix the sync bug"
     assert c["cmd"][c["cmd"].index("--add-dir") + 1].endswith("atlas/.git")

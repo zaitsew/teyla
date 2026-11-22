@@ -33,7 +33,8 @@ import uuid
 from . import answer, config, state
 from .control import state as control_state
 
-CODEX_MODEL = "gpt-6.2-sol"
+# the Codex CLI on the ChatGPT plan refuses gpt-6.2 (2026-11-22); move when `codex` accepts it
+CODEX_MODEL = "gpt-6.1-sol"
 CLAUDE_MODEL = "claude-sonnet-5-5"
 DEFAULT_PERMISSION_MODE = "acceptEdits"
 HEADER = ("Task from the owner via Teyla. Work only in this worktree and branch. Follow the repo's rules. "
