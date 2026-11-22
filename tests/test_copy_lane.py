@@ -417,8 +417,8 @@ def judged_ok(tmp_path, capsys):
 
 
 def test_judge_command_pins_the_lane_wrapper_read_only_and_no_skills():
-    cmd = cl.judge_command("/x/out.md", "gpt-6.2-sol", "codex-lane")
-    assert cmd[0] == "codex-lane" and cmd[cmd.index("-m") + 1] == "gpt-6.2-sol" and cmd[cmd.index("-s") + 1] == "read-only"
+    cmd = cl.judge_command("/x/out.md", "gpt-6.1-sol", "codex-lane")
+    assert cmd[0] == "codex-lane" and cmd[cmd.index("-m") + 1] == "gpt-6.1-sol" and cmd[cmd.index("-s") + 1] == "read-only"
     assert "skills.include_instructions=false" in cmd and cmd[cmd.index("--disable") + 1] == "multi_agent"
     assert cmd[-3:] == ["-o", "/x/out.md", "-"]
     assert cmd[cmd.index("-o") + 1] == "/x/out.md"
@@ -437,7 +437,7 @@ def test_judge_model_turns_a_row_to_fail_and_never_softens_a_code_fail(tmp_path,
     copy = table()
     p = put_copy(tmp_path, copy)
     code, out, _ = run(["judge", str(p), "--model"], capsys)
-    assert code == 1 and len(prompts) == 1 and prompts[0][1] == "gpt-6.2-sol"
+    assert code == 1 and len(prompts) == 1 and prompts[0][1] == "gpt-6.1-sol"
     sent = json.loads(prompts[0][0].split("--- input (JSON) ---\n", 1)[1])
     assert [r["key"] for r in sent["rows"]] == ["recipe.list.add", "recipe.list.title"]          # the code fail is not sent
     by = {r["key"]: r for r in json.loads(p.read_text(encoding="utf-8"))["rows"]}

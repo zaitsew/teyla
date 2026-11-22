@@ -35,7 +35,7 @@ and marks it pass or fail with one reason:
     chart        a banned phrase or a sentence limit of the voice chart
     hidden       a zero-width or bidi character
 
-`--model` adds a second model family: GPT-6.2 Sol through `codex-lane`, read-only, once for the rows that passed
+`--model` adds a second model family: GPT-6.1 Sol through `codex-lane`, read-only, once for the rows that passed
 the code checks, against the voice charts, the glossary and the budgets (docs/PRIVACY.md row 30). It writes
 verdicts into copy.json and copy.md. Exit 1 when a row fails.
 
@@ -60,7 +60,7 @@ import tempfile
 from . import copy_catalogs, copy_lexicon as lex, design_md, invisible, net, state, taste, voice
 
 MODEL = "claude-sonnet-5-5"                   # the ladder's default worker (POLICY section 1)
-JUDGE_MODEL = "gpt-6.2-sol"                   # the second family for review (POLICY section 2)
+JUDGE_MODEL = "gpt-6.1-sol"                   # the second family for review (POLICY section 2)
 WRITE_TIMEOUT_S = 300
 JUDGE_TIMEOUT_S = 900
 LANGS = lex.LANGS
