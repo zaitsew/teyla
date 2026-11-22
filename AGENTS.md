@@ -18,14 +18,14 @@ that says so (`docs/PRIVACY.md` lists every call). It has no server and no accou
 1. `uv --version`. If `uv` is missing, tell the person you are installing it, then run the official
    installer: `curl -LsSf https://astral.sh/uv/install.sh | sh`. The installer edits only the shell profile,
    so if `uv` is still not found, run `export PATH="$HOME/.local/bin:$PATH"`. If the installer cannot run,
-   use `pipx install git+https://github.com/zaitsew/teyla@v0.60.0` (Python 3.11+) and skip step 2.
-2. `uv tool install --python 3.12 git+https://github.com/zaitsew/teyla@v0.60.0`. If the Mac has no Python 3.11 to 3.13,
+   use `pipx install git+https://github.com/zaitsew/teyla@v0.60.1` (Python 3.11+) and skip step 2.
+2. `uv tool install --python 3.12 git+https://github.com/zaitsew/teyla@v0.60.1`. If the Mac has no Python 3.11 to 3.13,
    uv downloads Python 3.12 (about 25 MB). Tell the person; the pin keeps uv from choosing a newer Python.
 3. `teyla --version` prints a version. If `teyla` is not found: `uv tool update-shell`, then
    `~/.local/bin/teyla --version`.
 
 To look before installing, run the diagnosis straight from the repo; nothing is installed or written:
-`uvx --python 3.12 --from git+https://github.com/zaitsew/teyla@v0.60.0 teyla start --agent`. Install properly before any
+`uvx --python 3.12 --from git+https://github.com/zaitsew/teyla@v0.60.1 teyla start --agent`. Install properly before any
 step that sets up a launchd job, because the job must name a `teyla` that stays on disk.
 
 If a command needs the person's name, read `git config user.name`; if it is empty, ask once.
@@ -86,7 +86,7 @@ disk) are the person's: mention them once. The common ones:
 | You see | One-line fix |
 |---|---|
 | `teyla: command not found` | `uv tool update-shell`, then open a new shell |
-| `UNREACHABLE` or a certificate error behind a company proxy | `uv tool install --force --python 3.12 'teyla[work] @ git+https://github.com/zaitsew/teyla@v0.60.0'`; `docs/WORK.md` |
+| `UNREACHABLE` or a certificate error behind a company proxy | `uv tool install --force --python 3.12 'teyla[work] @ git+https://github.com/zaitsew/teyla@v0.60.1'`; `docs/WORK.md` |
 | `policy:file missing` | with a yes, owner as for O5: `teyla policy init --owner "$(git config user.name)" && teyla policy sync` |
 | `plugin` or `harness:<name>` not wired | with a yes: `teyla plugin install zaitsew/teyla`, `teyla harness sync` |
 | `version`: a newer release exists | with a yes: `teyla update` |

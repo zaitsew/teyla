@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.60.1 — 2026-11-22
+
 - **Codex routes go back to GPT-6.1 Sol.** The Codex CLI on a ChatGPT login refuses every gpt-6.2 model, so dispatch, `copy judge` and `ux judge --filter` use `gpt-6.1-sol` again. The `gpt-6.2-*` price rows stay for API transcripts.
 
 ## 0.60.0 — 2026-11-22
