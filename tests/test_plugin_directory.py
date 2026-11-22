@@ -230,6 +230,8 @@ PAYLOADS = {
     "machine-guard.sh": {"hook_event_name": "PreToolUse", "tool_name": "Bash",
                          "tool_input": {"command": "xcodebuild -scheme App build"}},
     "leak-guard.sh": {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls -la"}},
+    "platform-gate.sh": {"hook_event_name": "PreToolUse", "tool_name": "Edit",
+                         "tool_input": {"file_path": "/nonexistent/a.swift"}},
     "land-check.sh": {"hook_event_name": "Stop", "session_id": "s1"},
     "context-budget.sh": {"hook_event_name": "PostToolUse", "session_id": "s1"},
 }

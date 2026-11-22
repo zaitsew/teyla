@@ -48,6 +48,7 @@ GROUPS: dict[str, list[tuple[str, str]]] = {
         ("gtm", "The GTM cockpit: what waits for you today, the week per goal"),
         ("shield", "Does each product keep its security contract, and how old is the proof"),
         ("platform", "The shared resources every product reuses"),
+        ("parity", "When a secondary platform may get the primary's features"),
         ("testflight", "Did the iOS build reach a person"),
         ("freshness", "Do the README, store text and screenshots still match the product"),
         ("play", "Did the Android build reach a person"),

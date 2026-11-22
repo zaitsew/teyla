@@ -180,7 +180,7 @@ def test_no_path_map_passes_with_one_line(repo, capsys):
     repo.commit("mac", {"apps/macos/App.swift": "a\n"})
     code, out = repo.check(capsys, "--range", rng(repo))
     assert code == 0
-    assert out.strip() == "platform gate: no path map in teyla.toml, nothing checked"
+    assert out.strip() == "WARN platform gate: 2 platforms declared but no [productize.paths]; the gate checks nothing"
 
 
 def test_no_teyla_toml_and_a_single_platform_pass(repo, capsys):

@@ -25,6 +25,8 @@
 #   starts `teyla asks --quiet` in the background (stamp: ~/.teyla/asks.stamp).
 # - Once per weekly digest (~/.teyla/digest.md newer than ~/.teyla/digest.seen), print
 #   its headline: the top action of the week and its command.
+# - If ./docs/parity.toml exists (the parity gate, POLICY §14), print the one line `teyla parity status --line`
+#   gives: which secondary platforms are closed or open and how far behind they are.
 # - If ./teyla.toml names a product and the daily routine left a one-line routines
 #   summary for it (~/.teyla/routines/<product>.line), print that line: "did it run?"
 #   is then answered before the question is asked, and `teyla routines .` is named
@@ -159,6 +161,12 @@ orientation() {
     product=$(sed -n 's/^name *= *"\([^"]*\)".*/\1/p' teyla.toml 2>/dev/null | head -n 1)
     if [ -n "$product" ] && [ -s "$HOME/.teyla/routines/$product.line" ]; then
       echo "teyla: $(head -n 1 "$HOME/.teyla/routines/$product.line")"
+    fi
+    # The parity gate (docs/parity.toml): one line per repo with a ledger, from `teyla parity status --line`.
+    if [ -f "docs/parity.toml" ]; then
+      pbin=""
+      if command -v teyla >/dev/null 2>&1; then pbin=teyla; elif [ -x "$HOME/.local/bin/teyla" ]; then pbin="$HOME/.local/bin/teyla"; fi
+      [ -n "$pbin" ] && "$pbin" parity status --line 2>/dev/null | head -n 1
     fi
     # This repo's stale README, README image or store text (`teyla freshness`, refreshed daily). Shown in
     # every session until it is fixed: the session working in the repo is the one that can fix it.

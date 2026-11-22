@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **The parity gate: a trigger lets a platform exist, only an open train lets a port run.** `teyla platform check` passed a whole parallel web and Android sprint because a dated trigger opened a secondary platform for good, and it fired at push, after the tokens were spent. `teyla parity` keeps `docs/parity.toml` (candidate build, the owner's accepted feedback, a train per secondary platform: closed, queued or open for 7 days, owner overrides) with `init`, `status`, `deliver`, `accept`, `queue`, `open` (3 days after acceptance, 7 for an engine change), `sync` and `override`. `teyla platform check` now needs the trigger and an open train when the repo has the ledger (one WARN line when it has not). New `teyla platform hook`, wired as a Claude Code PreToolUse hook on Edit, Write, MultiEdit and NotebookEdit, refuses the first edit of a closed secondary's file (about 25 ms; fails open on any error; Codex and Grok have no file-edit hook here). The session start prints one `parity:` line. `[productize.paths]` accepts `!pattern` exclusions, R10 fails a multi-platform repo with no path map, and Teyla's own `teyla.toml` declares macOS primary and iOS behind the gate.
 - **OpenAI routes move to GPT-6.2.** Codex dispatch, `copy judge` and `ux judge --filter` default to `gpt-6.2-sol`. `teyla spend` prices `gpt-6.2-sol` ($2 / $10 per 1M tokens) and `gpt-6.2-astra` ($8 / $40); the `gpt-6.1-sol` and `gpt-6-astra` rows stay so old transcripts still price.
 
 ## 0.59.0 — 2026-11-21
