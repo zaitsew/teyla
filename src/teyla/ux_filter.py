@@ -18,7 +18,7 @@ never names a winner and never prints a score for a passed variant; scores appea
 variant and in --json only. Two rounds at most: a variant is judged at most twice per slice, recorded in
 `<slice>/.judge-rounds.json`; a third judgement is refused.
 
-Provider: `codex` (OpenAI, GPT-6.1 Sol through `codex-lane`, read-only, Standard tier, no saved session) because
+Provider: `codex` (OpenAI, GPT-6.2 Sol through `codex-lane`, read-only, Standard tier, no saved session) because
 Claude builds the variants; a second provider shares fewer blind spots. When codex is missing or exits non-zero,
 the run falls back to `claude -p` and says "same-provider judge". `--dry` prints the prompt and calls nothing.
 """

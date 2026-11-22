@@ -160,7 +160,7 @@ def judge_command(model: str) -> list[str]:
     return cmd
 
 
-FILTER_MODEL = "gpt-6.1-sol"                 # the OpenAI ladder's default worker (POLICY §1); the filter's judge
+FILTER_MODEL = "gpt-6.2-sol"                 # the OpenAI ladder's default worker (POLICY §1); the filter's judge
 
 
 def codex_binary() -> str | None:

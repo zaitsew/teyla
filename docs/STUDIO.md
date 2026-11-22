@@ -353,7 +353,7 @@ and length budgets (button 3 words, title 5, empty state 2 sentences, error 2 se
 onboarding step 25 words). `teyla copy write` runs the writer (Sonnet 5.5, one call per
 language from the same brief, never from another language; Spanish is es-ES, said so in the
 brief) and produces one table: key · control · state · budget · en · es · ru. `teyla copy
-judge` runs a second model family (GPT-6.1 Sol through `codex-lane`, POLICY §2) against the
+judge` runs a second model family (GPT-6.2 Sol through `codex-lane`, POLICY §2) against the
 chart, the budgets and Apple's writing rules (no "oops", no "we" in an error, no "Your" before
 a noun, a verb on every button) and marks every row pass or fail with one reason. The owner
 reviews one screen-state at a time on the phone, rendered by the real app in the TestFlight

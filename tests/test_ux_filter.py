@@ -118,7 +118,7 @@ def test_codex_path_flags_and_fallback_label(slice_, monkeypatch, capsys):
     only = str(d / "good.png")
     fake = Fake({"good.png": 0})
     assert run(["--filter", only, "--baseline", str(base)], monkeypatch, fake) == 0
-    assert fake.calls[0][2] == "gpt-6.1-sol"
+    assert fake.calls[0][2] == "gpt-6.2-sol"
     assert [pathlib.Path(p).name for p in fake.calls[0][1]] == ["base.png", "good.png"]
     cmd = ux_judge.codex_command("/tmp/o", ["/x.png", "/y.png"], binary="codex-lane")
     assert cmd[0] == "codex-lane" and "read-only" in cmd and "--ephemeral" in cmd and "--image=/x.png" in cmd
@@ -156,7 +156,7 @@ def test_dry_and_safe_mode_call_nothing(slice_, monkeypatch, capsys):
     monkeypatch.setattr(ux_filter, "taste_entries", lambda repo: [])
     assert cli.main(["ux", "judge", "--filter", str(d), "--baseline", str(base), "--dry"]) == 0
     out = capsys.readouterr().out
-    assert "6 call(s)" in out and "gpt-6.1-sol" in out and "<taste>" in out and not fake.calls
+    assert "6 call(s)" in out and "gpt-6.2-sol" in out and "<taste>" in out and not fake.calls
     monkeypatch.setenv("TEYLA_SAFE", "1")
     assert cli.main(["ux", "judge", "--filter", str(d), "--baseline", str(base)]) == 1
     assert "safe mode" in capsys.readouterr().err and not fake.calls
