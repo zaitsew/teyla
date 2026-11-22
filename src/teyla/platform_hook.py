@@ -58,7 +58,8 @@ def decide(payload: dict, today: datetime.date | None = None) -> tuple[int, str]
         return 0, ""
     rel = path.relative_to(root).as_posix()
     hit = platform_gate.platforms_of(rel, paths)
-    if not hit or primary in hit:
+    hit = [h for h in hit if h != primary]       # a file the primary also claims is still a secondary's file
+    if not hit:
         return 0, ""
     today = today or datetime.date.today()
     triggers = pz.get("triggers") if isinstance(pz.get("triggers"), dict) else {}
