@@ -45,25 +45,53 @@ def ledger_path(repo: pathlib.Path) -> pathlib.Path:
 
 
 def parse(text: str) -> dict | None:
+    return parse_checked(text)[0]
+
+
+def validate(data: dict) -> str | None:
+    """What is wrong with a parsed ledger, or None: every train needs a known state."""
+    for plat, t in (data.get("train") or {}).items():
+        if not isinstance(t, dict) or str(t.get("state") or "closed") not in STATES:
+            return f"train.{plat} has an unknown state"
+    return None
+
+
+def parse_checked(text: str) -> tuple[dict | None, str | None]:
+    """`(ledger, None)`, or `(None, why)` for text that does not parse or does not validate."""
     try:
         data = tomllib.loads(text)
-    except tomllib.TOMLDecodeError:
-        return None
-    return data if isinstance(data, dict) else None
+    except tomllib.TOMLDecodeError as e:
+        return None, str(e)
+    bad = validate(data)
+    return (None, bad) if bad else (data, None)
+
+
+def broken(why: str) -> str:
+    return f"{LEDGER} does not parse: {why}; fix it or `teyla parity init`"
+
+
+def read(repo: pathlib.Path) -> tuple[dict | None, str | None]:
+    """The working-tree ledger: `(None, None)` when absent, `(None, why)` when broken."""
+    try:
+        text = ledger_path(repo).read_text(encoding="utf-8")
+    except OSError:
+        return None, None
+    return parse_checked(text)
 
 
 def load(repo: pathlib.Path) -> dict | None:
     """The ledger as it is in the working tree; None when absent or unreadable."""
-    try:
-        return parse(ledger_path(repo).read_text(encoding="utf-8"))
-    except OSError:
-        return None
+    return read(repo)[0]
+
+
+def read_at(repo: pathlib.Path, rev: str) -> tuple[dict | None, str | None]:
+    """The ledger as committed at `rev` (an uncommitted opening is not pushed): `(None, None)` when absent."""
+    p = subprocess.run(["git", "-C", str(repo), "show", f"{rev}:{LEDGER}"], capture_output=True)
+    return parse_checked(p.stdout.decode("utf-8", "replace")) if p.returncode == 0 else (None, None)
 
 
 def load_at(repo: pathlib.Path, rev: str) -> dict | None:
-    """The ledger as committed at `rev`: an uncommitted opening of a train is not pushed."""
-    p = subprocess.run(["git", "-C", str(repo), "show", f"{rev}:{LEDGER}"], capture_output=True)
-    return parse(p.stdout.decode("utf-8", "replace")) if p.returncode == 0 else None
+    return read_at(repo, rev)[0]
 
 
 def _val(v) -> str:
