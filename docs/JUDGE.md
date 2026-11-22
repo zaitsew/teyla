@@ -76,7 +76,7 @@ The count is in `<slice>/.judge-rounds.json`, keyed by file name; the slice is `
 first variant. A third judgement is refused before any call (exit 2) and names the variants; take them out of
 the list. Merge what was filtered and decide the rest yourself.
 
-**Provider.** Claude builds the variants, so the filter asks another provider: GPT-6.1 Sol through `codex-lane`
+**Provider.** Claude builds the variants, so the filter asks another provider: GPT-6.2 Sol through `codex-lane`
 (`codex exec`, read-only, no saved session, Standard tier, the pictures attached with `--image`). `--model`
 changes the model. When `codex-lane` is missing or `codex` exits non-zero, the run falls back to `claude -p`
 (Sonnet 5.5) and says "same-provider judge" in the output and on stderr; `--provider claude` asks for that path

@@ -101,7 +101,7 @@ the string the catalog holds now, so a writer that turns `%d` into `%@` in all t
 The verb check is a heuristic: a small word list per language (`src/teyla/copy_lexicon.py`) plus the infinitive endings.
 A fail is a reason to read the row, and an override is `keep: true` on the row.
 
-`--model` adds the second family: GPT-6.1 Sol through `~/ops/bin/codex-lane`, read-only, once, for the rows that passed
+`--model` adds the second family: GPT-6.2 Sol through `~/ops/bin/codex-lane`, read-only, once, for the rows that passed
 the code checks, against the chart, the glossary and the budgets ([PRIVACY](PRIVACY.md) row 30). It can turn a pass into a
 fail. It never turns a fail into a pass. If the lane fails, the code verdicts stay and the exit is 3. Safe mode refuses it.
 

@@ -41,6 +41,10 @@ PRICES = {
     "claude-haiku-4": (1.0, 1.25, 0.1, 5.0, "triage", False),
     # OpenAI, per cloudzero / layer3labs 2026-09
     # Current generation, from the models.dev catalogue (base tier; the >272k-context surcharge is not modelled).
+    # GPT-6.2 (2026-11-22): Sol keeps the 6.1 rates; Astra is $8 / $40 (6 Astra was $10 / $50). Third-party reports
+    # of OpenAI's pricing page as of 2026-11-18, not read from the page itself. Cache writes are 1.25x input.
+    "gpt-6.2-astra": (8.0, 10.0, 0.4, 40.0, "orchestrate", False),
+    "gpt-6.2-sol": (2.0, 2.5, 0.1, 10.0, "volume", False),
     "gpt-6-astra": (10.0, 12.5, 1.0, 50.0, "orchestrate", False),
     "gpt-6.1-sol": (2.0, 2.5, 0.1, 10.0, "volume", False),
     "gpt-6-luna": (0.1, 0.125, 0.01, 0.5, "triage", False),

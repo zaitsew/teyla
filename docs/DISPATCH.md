@@ -28,7 +28,7 @@ worktree and branch. Follow the repo's rules. End with the session-end card."
 
 | Harness | `via` | Command |
 |---|---|---|
-| `codex` (default) | `codex-exec` | `codex-lane -m gpt-6.1-sol -C <worktree> -s workspace-write --add-dir <repo>/.git -- <prompt>`. `codex-lane` pins the Standard tier and waits for the machine guard. |
+| `codex` (default) | `codex-exec` | `codex-lane -m gpt-6.2-sol -C <worktree> -s workspace-write --add-dir <repo>/.git -- <prompt>`. `codex-lane` pins the Standard tier and waits for the machine guard. |
 | `claude` | `claude-bg` | `teyla load --wait --kind lane && claude --bg --model claude-sonnet-5-5 --permission-mode <mode> --name <name> <prompt>` |
 
 `--add-dir` lets the session commit: a worktree keeps its git data in the main repo's `.git`.

@@ -297,7 +297,11 @@ def test_a20_threshold_and_extra_models_come_from_config(_utc_and_list_prices):
 
 
 def test_top_tier_resolution_and_the_no_ladder_fallback(monkeypatch):
-    assert pricing.is_top_tier("fable") and pricing.is_top_tier("gpt-6-astra")
+    assert pricing.is_top_tier("fable") and pricing.is_top_tier("gpt-6-astra") and pricing.is_top_tier("gpt-6.2-astra")
+    assert not pricing.is_top_tier("gpt-6.2-sol") and pricing.explicit_tier("gpt-6.2-sol") == "volume"
+    # GPT-6.2 rows (input, cache write, cache read, output); the 6.1 / 6 rows stay so old transcripts still price
+    assert pricing.PRICES["gpt-6.2-sol"][:4] == (2.0, 2.5, 0.1, 10.0) and pricing.PRICES["gpt-6.2-astra"][:4] == (8.0, 10.0, 0.4, 40.0)
+    assert "gpt-6.1-sol" in pricing.PRICES and "gpt-6-astra" in pricing.PRICES
     assert not pricing.is_top_tier("sonnet[1m]") and not pricing.is_top_tier(None) and not pricing.is_top_tier("nonsense")
     assert pricing.explicit_tier("opus") == "volume" and pricing.explicit_tier("fable") == "orchestrate"
     # a provider with no orchestrate row has no ladder: its most expensive family is the top

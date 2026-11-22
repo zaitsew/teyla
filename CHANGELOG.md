@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **OpenAI routes move to GPT-6.2.** Codex dispatch, `copy judge` and `ux judge --filter` default to `gpt-6.2-sol`. `teyla spend` prices `gpt-6.2-sol` ($2 / $10 per 1M tokens) and `gpt-6.2-astra` ($8 / $40); the `gpt-6.1-sol` and `gpt-6-astra` rows stay so old transcripts still price.
+
 ## 0.59.0 — 2026-11-21
 
 - **`teyla prose FILE...` measures a draft; `teyla intent list` works.** `teyla prose README.md` said "unrecognized arguments": the command read only sessions. It now takes file paths (`-` is stdin), prints words, long-sentence share and ban-list hits per file, and exits 1 when one is over a limit. `teyla intent list`, which the help names, answered "no intent recorded for list"; it now prints the per-product list. A test fails when a command or subcommand is missing from `docs/COMMANDS.md` (`prose`, `tg` and seven subcommands were).
