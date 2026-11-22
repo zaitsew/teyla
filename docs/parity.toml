@@ -1,0 +1,7 @@
+# Parity gate ledger (POLICY §14). Written by `teyla parity`; hand edits are fine.
+# candidate: the newest primary build a person can install. accepted: the owner's positive feedback on a
+# primary build. train.<platform>: closed | queued | open. override: the owner's explicit "now, skip the gate".
+
+[train.ios]
+state = "closed"
+base = "e8ca6ff8a5c54a9e5de9b755a2462efeb455066e"

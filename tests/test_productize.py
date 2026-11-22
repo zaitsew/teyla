@@ -35,11 +35,19 @@ cost_cap = "{cost_cap}"
 {triggers_block}"""
 
 
+def _paths_block(platforms: str, paths: bool) -> str:
+    """R10 wants a [productize.paths] map once there is more than one platform."""
+    names = [p.strip().strip('"') for p in platforms.strip("[]").split(",") if p.strip()]
+    if not paths or len(names) < 2:
+        return ""
+    return "\n[productize.paths]\n" + "".join(f'{n} = ["{n}/**"]\n' for n in names)
+
+
 def repo(tmp_path, name="thing", *, target="family", platforms='["web"]', identity="supabase-auth",
          tenancy="user_id+rls", backend="supabase:abc", llm="none", doc="docs/GETTING-STARTED.md",
          secrets="[]", cost_cap="", distribution='web = "pwa"', env_example=None, blockers="",
          first_run="sign-in+skip", sample_data="none", make_doc=True, git=True,
-         primary="", triggers=None, capture=True) -> pathlib.Path:
+         primary="", triggers=None, capture=True, paths=True) -> pathlib.Path:
     d = tmp_path / name
     (d / "docs").mkdir(parents=True, exist_ok=True)
     if capture:     # R11: a product whose test builds can report, on any primary the fixtures use
@@ -58,7 +66,7 @@ def repo(tmp_path, name="thing", *, target="family", platforms='["web"]', identi
         first_run=first_run, sample_data=sample_data,
         primary_line=f'primary = "{primary}"\n' if primary else "",
         triggers_block=("[productize.triggers]\n" + "".join(f'{k} = "{v}"\n' for k, v in triggers.items())) if triggers is not None else "",
-        distribution=distribution) + blockers)
+        distribution=distribution) + _paths_block(platforms, paths) + blockers)
     return d
 
 
@@ -493,6 +501,13 @@ def test_r10_two_platforms_met_with_a_dated_trigger(tmp_path):
     assert productize.evaluate(productize.parse(d / "teyla.toml"))["blockers"] == []
 
 
+def test_r10_several_platforms_without_a_path_map_fail(tmp_path):
+    d = repo(tmp_path, primary="ios", triggers={"web": "2026-01-15: a named tester has no iPhone"}, paths=False, **MULTI)
+    r = reqs(d)["R10"]
+    assert r["met"] is False
+    assert r["detail"] == "no [productize.paths]: the platform gate checks nothing"
+
+
 def test_r10_primary_unset_names_it_and_every_missing_trigger(tmp_path):
     r = reqs(repo(tmp_path, **MULTI))["R10"]
     assert r["met"] is False
@@ -550,6 +565,7 @@ def test_r10_applies_to_every_shareable_target(tmp_path):
 def test_scaffolded_block_with_triggers_uncommented_parses(tmp_path):
     block = scaffold.PRODUCTIZE_BLOCK.replace("# [productize.triggers]\n# android", "[productize.triggers]\nandroid")
     block = block.replace('platforms = ["web"]', 'platforms = ["web", "android"]')
+    block += '\n[productize.paths]\nweb = ["web/**"]\nandroid = ["android/**"]\n'
     d = tmp_path / "s"
     (d / ".git").mkdir(parents=True)
     (d / "teyla.toml").write_text('[product]\nname = "s"\n' + block)

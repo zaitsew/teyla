@@ -19,10 +19,16 @@ nobody asked for. This module turns it into a check that the pre-push hook runs.
     teyla platform check [--repo PATH] [--range A..B | --pre-push [--remote NAME]]
                          [--label security|data-loss|backend-break] [--json]
 
-A changed file maps to every platform whose pattern matches it. A file that matches no pattern is
+A pattern starting with `!` excludes: `ios = ["apps/ios/**", "!apps/ios/Shared.swift"]` leaves a file two
+platforms compile unmapped. A changed file maps to every platform whose pattern matches it. A file that matches no pattern is
 shared code and never fails the gate. A touched platform other than `primary` passes only with a
 trigger `"YYYY-MM-DD: <reason>"` (the validity rules of productize R10). Exit 1 lists, per platform,
 the files, what is wrong with the trigger, and the line to add.
+
+A valid trigger only says the platform may exist. With `docs/parity.toml` in the repo (`teyla parity`), the
+touched platform also needs an open train (or an owner override): primary first, then the owner's feedback, then
+the port. Without the ledger the trigger alone passes, with one WARN line. `teyla platform hook` asks the same
+question before the first edit of a closed secondary's file (see `platform_hook.py`).
 
 §14 allows three same-day exceptions: a security fix, a data-loss fix and a backend change that would
 break a shipped client. `--label` (or `TEYLA_PLATFORM_LABEL`) lets a failing push pass. The use is
@@ -45,7 +51,7 @@ import subprocess
 import sys
 import tomllib
 
-from . import config
+from . import config, parity
 from .productize import TRIGGER_RE, _real_date
 
 LABELS = ("security", "data-loss", "backend-break")
@@ -85,14 +91,16 @@ def glob_re(pattern: str) -> re.Pattern:
 
 
 def platforms_of(path: str, paths: dict) -> list[str]:
+    """Platforms whose patterns match `path`; a `!pattern` removes the file from that platform."""
     if path.startswith("./"):
         path = path[2:]
     hit = []
     for plat, pats in paths.items():
-        for pat in ([pats] if isinstance(pats, str) else pats or []):
-            if glob_re(str(pat)).match(path):
-                hit.append(plat)
-                break
+        pats = [str(p) for p in ([pats] if isinstance(pats, str) else pats or [])]
+        if any(glob_re(p[1:]).match(path) for p in pats if p.startswith("!")):
+            continue
+        if any(glob_re(p).match(path) for p in pats if not p.startswith("!")):
+            hit.append(plat)
     return hit
 
 
@@ -188,11 +196,20 @@ def load_manifest(repo: pathlib.Path, rev: str) -> dict | None:
         return None
 
 
-def evaluate(manifest: dict | None, files: list[str]) -> dict:
-    """Pure: the manifest and the changed files in, the verdict out. No git, no I/O."""
+WARN_NO_LEDGER = "WARN platform gate: no parity ledger: run `teyla parity init`; only the dated trigger is checked"
+
+
+def evaluate(manifest: dict | None, files: list[str], ledger: dict | None = None,
+             today: datetime.date | None = None) -> dict:
+    """Pure: the manifest, the changed files and the parity ledger in, the verdict out. No git, no I/O."""
     pz = (manifest or {}).get("productize")
     paths = pz.get("paths") if isinstance(pz, dict) else None
     if not isinstance(paths, dict) or not paths:
+        declared = [str(p) for p in (pz.get("platforms") or [])] if isinstance(pz, dict) else []
+        if len(declared) > 1:
+            note = (f"WARN platform gate: {len(declared)} platforms declared but no [productize.paths]; "
+                    f"the gate checks nothing")
+            return {"ok": True, "checked": False, "note": note, "violations": []}
         return {"ok": True, "checked": False, "note": NO_MAP, "violations": []}
     declared = [str(p) for p in (pz.get("platforms") or [])] or list(paths)
     primary = str(pz.get("primary") or "").strip()
@@ -203,6 +220,7 @@ def evaluate(manifest: dict | None, files: list[str]) -> dict:
         return {"ok": True, "checked": False, "note": "platform gate: no primary in [productize], nothing checked",
                 "violations": []}
     triggers = pz.get("triggers") if isinstance(pz.get("triggers"), dict) else {}
+    today = today or datetime.date.today()
     touched: dict[str, list[str]] = {}
     for f in files:
         for plat in platforms_of(f, paths):
@@ -212,32 +230,42 @@ def evaluate(manifest: dict | None, files: list[str]) -> dict:
         if plat == primary:
             continue
         problem = trigger_problem(triggers, plat)
-        if problem:
-            violations.append({"platform": plat, "files": fs, "problem": problem,
-                               "add": f'{plat} = "YYYY-MM-DD: <who asked, why>"'})
+        is_open, reason = parity.gate_from(ledger, plat, today)
+        if problem or not is_open:
+            v = {"platform": plat, "files": fs, "problem": problem or "", "gate": None if is_open else reason}
+            if problem:
+                v["add"] = f'{plat} = "YYYY-MM-DD: <who asked, why>"'
+            violations.append(v)
+    warnings = [] if ledger is not None else [WARN_NO_LEDGER]
     return {"ok": not violations, "checked": True, "primary": primary, "touched": sorted(touched),
-            "violations": violations}
+            "violations": violations, "warnings": warnings}
 
 
 def render(result: dict) -> str:
     if not result["checked"]:
         return result["note"] + "\n"
+    warn = "".join(w + "\n" for w in result.get("warnings", []))
     if result["ok"]:
-        return f"platform gate: ok (primary {result['primary']}; touched: {', '.join(result['touched']) or 'none'})\n"
+        return warn + (f"platform gate: ok (primary {result['primary']}; "
+                       f"touched: {', '.join(result['touched']) or 'none'})\n")
     out = [f"platform gate: refused. Primary is {result['primary']}; a second platform needs a dated trigger "
-           f"(POLICY §14)."]
+           f"and an open train (POLICY §14)."]
     for v in result["violations"]:
-        out.append(f"\n  {v['platform']}: {v['problem']}")
+        why = [x for x in (v["problem"], v.get("gate") and f"gate closed: {v['gate']}") if x]
+        out.append(f"\n  {v['platform']}: " + "; ".join(why))
         out.append("    files:")
         out += [f"      {f}" for f in v["files"][:MAX_FILES]]
         if len(v["files"]) > MAX_FILES:
             out.append(f"      +{len(v['files']) - MAX_FILES} more")
-        out.append("    add to teyla.toml:")
-        out.append("      [productize.triggers]")
-        out.append(f"      {v['add']}")
+        if v.get("add"):
+            out.append("    add to teyla.toml:")
+            out.append("      [productize.triggers]")
+            out.append(f"      {v['add']}")
+        if v.get("gate"):
+            out.append("    next: `teyla parity status` (primary first; the owner's feedback opens a train)")
     out.append(f"\n  Exception (security, data loss, a backend change that breaks a shipped client): "
                f"rerun with --label {'|'.join(LABELS)} or TEYLA_PLATFORM_LABEL=<label>; the use is logged.")
-    return "\n".join(out) + "\n"
+    return warn + "\n".join(out) + "\n"
 
 
 # --- the exception log -----------------------------------------------------------------------
@@ -247,7 +275,7 @@ def log_path() -> pathlib.Path:
     return (pathlib.Path(home).expanduser() if home else config.TEYLA_DIR) / LOG_NAME
 
 
-def log_exception(repo: pathlib.Path, label: str, platforms: list[str], rng: str) -> None:
+def log_row(repo: pathlib.Path, label: str, platforms: list[str], rng: str) -> None:
     top = _git(repo, "rev-parse", "--show-toplevel")
     name = pathlib.Path(top.stdout.strip() or str(repo)).name
     row = "\t".join([datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), name, label,
@@ -262,8 +290,11 @@ def log_exception(repo: pathlib.Path, label: str, platforms: list[str], rng: str
                         f"record is not an exception") from e
 
 
+log_exception = log_row
+
+
 def run(repo: pathlib.Path, *, rng: str | None = None, pre_push: bool = False, remote: str | None = None,
-        label: str | None = None, stdin_text: str = "") -> tuple[int, dict]:
+        label: str | None = None, stdin_text: str = "", today: datetime.date | None = None) -> tuple[int, dict]:
     label = (label or os.environ.get("TEYLA_PLATFORM_LABEL") or "").strip() or None
     if label and label not in LABELS:
         raise GateError(f"unknown label '{label}'; valid labels: {', '.join(LABELS)}")
@@ -280,11 +311,12 @@ def run(repo: pathlib.Path, *, rng: str | None = None, pre_push: bool = False, r
         manifest = load_manifest(repo, rev)
         if manifest is None or not isinstance(manifest.get("productize"), dict):
             continue
-        r = evaluate(manifest, files)
+        r = evaluate(manifest, files, parity.load_at(repo, rev), today)
         if not r["checked"]:
             result["note"] = r["note"]
             continue
         result.update(checked=True, primary=r["primary"])
+        result["warnings"] = sorted(set(result.get("warnings", [])) | set(r["warnings"]))
         result["touched"] = sorted(set(result.get("touched", [])) | set(r["touched"]))
         for v in r["violations"]:
             m = merged.setdefault(v["platform"], dict(v, files=[]))

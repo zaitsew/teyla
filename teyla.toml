@@ -4,6 +4,26 @@
 [product]
 name = "teyla"
 
+# POLICY §14: the owner named macOS the primary platform on 2026-11-22. iOS exists by a dated trigger, and its
+# files change only while a parity train is open (docs/parity.toml, `teyla parity status`).
+[productize]
+primary = "macos"
+platforms = ["macos", "ios"]
+
+[productize.triggers]
+ios = "2026-10-26: the owner asked for an iOS version in addition to macOS"
+
+[productize.paths]
+macos = ["apps/mac/**"]
+# The three files the Mac store target also compiles (see [[release.store_target]] paths) are shared: a `!`
+# pattern leaves them unmapped, so editing them is never an iOS port.
+ios = [
+  "apps/ios/**",
+  "!apps/ios/Teyla/Core/RelayStore.swift",
+  "!apps/ios/Teyla/Core/RelayCrypto.swift",
+  "!apps/ios/Teyla/Core/Storage.swift",
+]
+
 [release]
 apple_bundle_id = "com.zaitsew.teyla"   # the iPhone and Mac store builds share one record (universal purchase)
 

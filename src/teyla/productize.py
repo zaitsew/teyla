@@ -328,9 +328,11 @@ def _platforms_row(pz: dict, platforms: list[str]) -> dict:
             problems.append(f"{plat}: trigger has no date")
         elif not m.group(2).strip():
             problems.append(f"{plat}: trigger has no reason")
+    if not (isinstance(pz.get("paths"), dict) and pz["paths"]):
+        problems.append("no [productize.paths]: the platform gate checks nothing")
     if problems:
         return _req("R10", "platforms", False, ", ".join(problems))
-    return _req("R10", "platforms", True, f"primary={primary}, {len(platforms) - 1} trigger(s) dated")
+    return _req("R10", "platforms", True, f"primary={primary}, {len(platforms) - 1} trigger(s) dated, paths mapped")
 
 
 def _real_date(text: str) -> bool:
@@ -365,8 +367,9 @@ def evaluate(manifest: dict, *, mail_ready: bool | None = None) -> dict:
     for row in rows:
         if row["id"] == "R10" and not row["met"]:
             blockers.append({"what": f"platforms: {row['detail']}", "who": "agent",
-                             "how": "write [productize] primary and a dated [productize.triggers] entry "
-                                    "per other platform, from the repo's history and the owner's requests"})
+                             "how": "write [productize] primary, a dated [productize.triggers] entry per other "
+                                    "platform (from the repo's history and the owner's requests) and a "
+                                    "[productize.paths] map, then `teyla parity init`"})
         if row["id"] == "R11" and not row["met"]:
             blockers.append({"what": f"feedback capture: {row['detail']}", "who": "agent",
                              "how": "wire the platform's review package into test builds (docs/REVIEW.md, "
