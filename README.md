@@ -5,7 +5,7 @@
 
 <p align="center"><b>The control room for working with AI agents on one Mac.</b><br>What your agent sessions cost, what waits on you, and where each product stands.</p>
 
-Teyla reads your Claude Code and Codex sessions on your Mac, shows what they cost and what's waiting on you, and fixes the waste. Nothing about your sessions leaves your Mac unless you turn it on. It is a command-line tool with a Mac and an iPhone app, for a person who builds products with AI agents. It also reads Grok, Cursor and Hermes sessions.
+Teyla reads your Claude Code and Codex sessions on your Mac, shows what they cost and what's waiting on you, and fixes the waste. Nothing about your sessions leaves your Mac unless you turn it on. It is a command-line tool with a Mac and an iPhone app, for a person who builds products with AI agents.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/mac/today-dark.png"><img alt="Today in Teyla for Mac, on sample data: each goal as a row of circles, the next step, and a year of activity" src="docs/img/mac/today-light.png" width="820"></picture>
 
@@ -155,4 +155,6 @@ teyla uninstall --dry      # list what Teyla would remove: links, hooks, jobs
 teyla uninstall && uv tool uninstall teyla
 ```
 
-<!-- teyla:reviewed 2026-11-13 -->
+<sub>Works on my machine: one Mac, no server.</sub>
+
+<!-- teyla:reviewed 2026-11-23 -->
