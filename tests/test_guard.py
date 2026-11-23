@@ -589,15 +589,15 @@ def test_a_build_seen_on_the_second_look_restarts_the_idle_clock(m, clock):
 
 # --- the trend ----------------------------------------------------------------------------------------
 
-def swap_sysctl(used_gb: float) -> str:
+def swap_sysctl(used_gb: float, pressure: int = 1) -> str:
     return ("25769803776\n10\n{ 1.50 2.00 3.00 }\n"
-            f"total = 16384.00M  used = {used_gb * 1024:.2f}M  free = 1.00M  (encrypted)\n1\n1073741824\n")
+            f"total = 16384.00M  used = {used_gb * 1024:.2f}M  free = 1.00M  (encrypted)\n{pressure}\n1073741824\n")
 
 
 def test_tick_judges_with_the_trend_and_records_the_level_the_hold_reads_back(m, clock):
     levels = []
     for minute in range(10):
-        m.sysctl = swap_sysctl(4 + 0.6 * minute)
+        m.sysctl = swap_sysctl(4 + 0.6 * minute, pressure=2 if minute >= 4 else 1)   # growth counts only under pressure
         res = tick(m)
         levels.append(res["verdict"].level)
         clock.advance(1)
