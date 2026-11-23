@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Swap growth alone no longer makes the guard WORSENING.** macOS grows the swap file without swapping: since 2026-11-17, 219 of 885 refusals were "swap growing", at a median swap-out of 0 MB/s, and a third had memory pressure 1. The growth rule (> `guard.swap_grow_gb_30m` per 30 minutes) now counts only while the swap-out rate is at least 5 MB/s or memory pressure is at least 2. No threshold, CRITICAL rule, disk rule or swap-out rule changed.
+
 ## 0.60.1 — 2026-11-22
 
 - **Codex routes go back to GPT-6.1 Sol.** The Codex CLI on a ChatGPT login refuses every gpt-6.2 model, so dispatch, `copy judge` and `ux judge --filter` use `gpt-6.1-sol` again. The `gpt-6.2-*` price rows stay for API transcripts.
