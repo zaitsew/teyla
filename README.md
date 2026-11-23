@@ -155,4 +155,6 @@ teyla uninstall --dry      # list what Teyla would remove: links, hooks, jobs
 teyla uninstall && uv tool uninstall teyla
 ```
 
-<!-- teyla:reviewed 2026-11-13 -->
+<sub>"It works on my machine" is the whole architecture here: one Mac, no server, no account. Ship it.</sub>
+
+<!-- teyla:reviewed 2026-11-23 -->
