@@ -608,7 +608,7 @@ def test_wait_with_a_zero_timeout_checks_once():
 
 def args(**kw):
     base = dict(json=False, record=False, quiet=False, admit=None, wait=False, kind="build", timeout=None,
-                replay=False, days=7, day=None, cwd=None)
+                replay=False, days=7, day=None, cwd=None, threads=False)
     return argparse.Namespace(**{**base, **kw})
 
 
@@ -1675,3 +1675,179 @@ def test_a_verdict_that_is_already_bad_is_not_relabelled_by_the_hold():
     assert load.with_hold(bad, held) is bad
     busy = load.with_hold(load.Verdict(load.BUSY, ["load 5.0 per core"], 0), held)
     assert busy.level == "HOLD" and busy.reasons[1:] == ["load 5.0 per core"] and busy.exit_code == 1
+
+
+
+# --- runnable threads by category -----------------------------------------------------------------
+
+# `ps -axM`: a process's first thread line starts at column 0 (USER PID TT %CPU STAT ...), the others start with
+# blank padding and read PID %CPU STAT ...
+PS_M = """USER               PID   TT   %CPU STAT PRI     STIME     UTIME COMMAND
+root                 1   ??    0.0 S    31T   0:00.45   0:00.00 /sbin/launchd
+                     1         0.0 R    37T   0:00.15   0:00.03
+me                 200   ??    5.0 R    31T   0:01.00   0:00.10 /Library/Developer/CoreSimulator/Volumes/x/iOS 27.0.simruntime/Contents/Resources/RuntimeRoot/bin/launchd_sim
+                   200         0.0 R    31T   0:00.00   0:00.00
+                   200         0.0 R    31T   0:00.00   0:00.00
+                   200         0.0 S    31T   0:00.00   0:00.00
+me                 300 s000    9.0 R    31T   0:01.00   0:00.10 /usr/bin/clang -c a.c
+                   300         0.0 R+   31T   0:00.00   0:00.00
+me                 400 s001    0.0 S    31T   0:01.00   0:00.10 /usr/bin/python3 x.py
+                   400         0.0 U    31T   0:00.00   0:00.00
+me                 500   ??    1.0 R    31T   0:01.00   0:00.10 /opt/homebrew/bin/node server.js
+"""
+PS_CMD = """    1 /sbin/launchd
+  200 /Library/Developer/CoreSimulator/Volumes/x/iOS 27.0.simruntime/Contents/Resources/RuntimeRoot/bin/launchd_sim
+  300 /usr/bin/clang -c a.c
+  400 /usr/bin/python3 x.py
+  500 /opt/homebrew/bin/node server.js
+"""
+
+
+def test_runnable_threads_counts_only_r_states_per_category():
+    t = load.runnable_threads(PS_M, PS_CMD)
+    assert t["total"] == 7
+    assert t["counts"] == {"sim": 3, "compile": 2, "java": 0, "tests": 0, "node": 1, "python": 0, "other": 1}
+    assert t["top3"] == "launchd_sim:3,clang:2,launchd:1"       # ties break by name
+
+
+def test_runnable_threads_returns_none_without_usable_text():
+    assert load.runnable_threads("", PS_CMD) is None
+    assert load.runnable_threads(PS_M, "") is None
+    assert load.runnable_threads("USER PID\n", PS_CMD) is None
+
+
+@pytest.mark.parametrize("command,cat", [
+    ("/x/CoreSimulator/Devices/ABC/launchd_sim", "sim"),
+    ("/x/iOS 27.0.simruntime/bin/xcodebuild", "sim"),                 # sim wins over compile
+    ("/Xcode/usr/bin/swift-frontend -c", "compile"),
+    ("/usr/bin/ld -o a", "compile"),
+    ("/usr/bin/xcodebuild -scheme X", "compile"),
+    ("/Xcode/usr/bin/SWBBuildService", "compile"),
+    ("/jdk/bin/java -jar gradle-launcher.jar", "java"),
+    ("/x/swiftpm-testing-helper --test-bundle-path a.xctest", "tests"),
+    ("/usr/bin/python3 -m pytest tests", "tests"),                    # tests wins over python
+    ("/opt/homebrew/bin/node codex.js", "node"),
+    ("/Users/me/.bun/bin/bun run dev", "node"),
+    ("/usr/bin/python3 script.py", "python"),
+    ("/usr/bin/ls", "other"),
+    ("", "other"),
+])
+def test_thread_category_precedence(command, cat):
+    assert load.thread_category(command) == cat
+
+
+def _ps_runner(fail=False):
+    def run(cmd, timeout=60):
+        if fail:
+            return 1, ""
+        return (0, PS_M) if cmd == ["ps", "-axM"] else (0, PS_CMD)
+    return run
+
+
+def test_sample_threads_runs_two_ps_calls_and_never_raises():
+    calls = []
+
+    def run(cmd, timeout=60):
+        calls.append(cmd)
+        return _ps_runner()(cmd, timeout)
+
+    assert load.sample_threads(run)["total"] == 7
+    assert calls == [["ps", "-axM"], ["ps", "-axo", "pid=,command="]]
+    assert load.sample_threads(_ps_runner(fail=True)) is None
+    assert load.sample_threads(lambda cmd, timeout=60: (0, PS_M) if cmd == ["ps", "-axM"] else (1, "")) is None
+
+    def boom(cmd, timeout=60):
+        raise TimeoutError("ps")
+
+    assert load.sample_threads(boom) is None
+
+
+def _snap_at(minute=0):
+    return load.Snapshot(time=f"2026-11-20T10:{minute:02d}:00+01:00", ram_bytes=24 * GIB, ncpu=10, load1=312.5)
+
+
+def _with_level(level):
+    import dataclasses
+    return dataclasses.replace(load.assess(_snap_at(), {}), level=level)
+
+
+@pytest.mark.parametrize("level,writes", [("OK", False), ("BUSY", False), ("WORSENING", True), ("CRITICAL", True)])
+def test_record_threads_writes_only_on_bad_levels(tmp_path, level, writes):
+    path = tmp_path / "load-threads.tsv"
+    out = load.record_threads(_snap_at(), _with_level(level), _ps_runner(), path)
+    assert (out == path) is writes and path.exists() is writes
+    if writes:
+        header, row = path.read_text().splitlines()
+        assert header.startswith("#time\tlevel\tload1\trunnable_total\tsim\tcompile")
+        cells = row.split("\t")
+        assert cells[:6] == ["2026-11-20T10:00:00+01:00", level, "312.50", "7", "3", "2"]
+        assert cells[-1] == "launchd_sim:3,clang:2,launchd:1"
+
+
+def test_record_threads_skips_when_ps_fails_and_defaults_to_teyla_home(tmp_path):
+    assert load.record_threads(_snap_at(), _with_level("CRITICAL"), _ps_runner(fail=True), tmp_path / "t.tsv") is None
+    assert not (tmp_path / "t.tsv").exists()
+    out = load.record_threads(_snap_at(), _with_level("CRITICAL"), _ps_runner())
+    from teyla.corrections import teyla_home
+    assert out == teyla_home() / "load-threads.tsv" and out.exists()
+
+
+def test_cmd_load_record_runs_the_thread_sample_only_for_a_bad_sample():
+    from teyla.corrections import teyla_home
+    calm = Machine(sysctl_text())
+    calm.add(1, "/bin/ls")
+    assert load.cmd_load(args(quiet=True, record=True), run=calm.run) == 0
+    assert not (teyla_home() / "load-threads.tsv").exists()
+    assert [c for c in calm.calls if c[:2] == ["ps", "-axM"]] == []          # no extra ps on an OK sample
+    assert load.cmd_load(args(quiet=True, record=True), run=crowded().run) == 0   # CRITICAL
+    assert len(load.read_records(path=teyla_home() / "load.tsv")) == 2        # load.tsv keeps one row per record
+
+
+THREAD_ROWS = """#time\tlevel\tload1\trunnable_total\tsim\tcompile\tjava\ttests\tnode\tpython\tother\ttop3
+{t}\tCRITICAL\t300.00\t300\t200\t10\t50\t20\t10\t5\t5\tlaunchd_sim:150,java:40,clang:10
+{t}\tCRITICAL\t400.00\t400\t100\t20\t150\t60\t30\t20\t20\tjava:120,launchd_sim:90,node:30
+{t}\tCRITICAL\t350.00\t100\t60\t10\t10\t10\t5\t3\t2\tlaunchd_sim:50,java:10
+{t}\tWORSENING\t90.00\t50\t5\t30\t5\t5\t3\t1\t1\tclang:20,swift-frontend:10
+junk line
+{old}\tCRITICAL\t999.00\t999\t999\t0\t0\t0\t0\t0\t0\told:999
+"""
+
+
+def test_threads_summary_per_level(capsys):
+    from teyla.corrections import teyla_home
+    now = dt.datetime.now().astimezone()
+    teyla_home().mkdir(parents=True, exist_ok=True)
+    (teyla_home() / "load-threads.tsv").write_text(THREAD_ROWS.format(
+        t=now.isoformat(timespec="seconds"), old=(now - dt.timedelta(days=30)).isoformat(timespec="seconds")))
+    assert load.cmd_load(args(threads=True)) == 0
+    out = capsys.readouterr().out
+    assert "(4 samples)" in out                                               # the 30-day-old row and the junk are out
+    crit = out.split("CRITICAL:")[1].split("WORSENING:")[0]
+    assert "3 samples, median runnable threads 300" in crit
+    cats = [ln.split()[0] for ln in crit.splitlines() if "median share" in ln]
+    assert cats[0] == "sim"                                                   # shares 67%, 25%, 60%: median 60%
+    assert "java (3)" in crit and "launchd_sim (3)" in crit
+    worse = out.split("WORSENING:")[1]
+    assert "1 samples, median runnable threads 50" in worse
+    assert [ln.split()[0] for ln in worse.splitlines() if "median share" in ln][0] == "compile"
+    assert load.cmd_load(args(threads=True, days=60)) == 0
+    assert "(5 samples)" in capsys.readouterr().out
+
+
+def test_threads_summary_empty_or_missing_file(capsys):
+    from teyla.corrections import teyla_home
+    assert load.cmd_load(args(threads=True)) == 0
+    one = capsys.readouterr().out.strip().splitlines()
+    assert len(one) == 1 and "no runnable-thread rows recorded yet" in one[0]
+    assert "teyla load --record" in one[0] and "CRITICAL" in one[0] and "WORSENING" in one[0]
+    teyla_home().mkdir(parents=True, exist_ok=True)
+    (teyla_home() / "load-threads.tsv").write_text("")
+    assert load.cmd_load(args(threads=True)) == 0
+    assert "no runnable-thread rows recorded yet" in capsys.readouterr().out
+
+
+def test_register_wires_threads():
+    p = argparse.ArgumentParser()
+    load.register(p.add_subparsers())
+    ns = p.parse_args(["load", "--threads", "--days", "3"])
+    assert ns.threads is True and ns.days == 3
