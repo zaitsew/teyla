@@ -71,8 +71,9 @@ if [ "$mode" != none ] && [ -x ./check.sh ]; then
       exit 1
     }
   else
-    # The full suite is a build on a shared Mac: queue it. A missing teyla runs it at once.
-    if command -v teyla >/dev/null 2>&1; then teyla load --wait --kind build </dev/null >&2 || exit 1; fi
+    # The full suite is Python tests, not an Xcode or Gradle build: wait for a lane slot, not one of the build slots.
+    # 2026-11-23: three pushes of one branch timed out behind 7 queued builds. A missing teyla runs it at once.
+    if command -v teyla >/dev/null 2>&1; then teyla load --wait --kind lane </dev/null >&2 || exit 1; fi
     echo "pre-push: running ./check.sh (TEYLA_PREPUSH_TESTS=0 skips it, logged)" >&2
     # git's own variables must not leak into the tests' scratch repositories
     env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_PREFIX ./check.sh </dev/null >&2 || {
