@@ -4,6 +4,7 @@
     teyla load --admit build|sim|lane            silent exit 0 when allowed; the refusal and exit 2 when not
     teyla load --wait --kind build|sim|lane      poll until a slot is free (exit 0) or the timeout (exit 3)
     teyla load --replay [--days N] [--day D]     the verdict and the admissions over the recorded days
+    teyla load --threads [--days N]              which category held the runnable threads at CRITICAL/WORSENING samples
 
 On 2026-10-09 a 24 GB Mac kernel-panicked while agents ran ~36 Claude Code sessions, 17 Codex
 sessions, three booted simulators, parallel `xcodebuild`s, Gradle/Kotlin daemons, a VM and Chrome:
@@ -83,6 +84,19 @@ Recorder (`record`, `read_records`). One TSV line per snapshot in `~/.teyla/load
 moves it), a `#` header first. Past ~2 MB the file is rewritten with its newest half, atomically.
 `--json`, `--quiet` and `--record` never exit non-zero because of the load; the text report does,
 so a script can branch on it.
+
+Runnable threads (`runnable_threads`, `record_threads`, `render_threads`). A benchmark showed the load peaks of 300-688 were
+not compile jobs: at peaks of 270-420 runnable threads about 200 sat in CoreSimulator runtime processes, then java/gradle and
+test helpers, and only 11-24 in compilers. So a CRITICAL or WORSENING sample, from `teyla load --record` or the guard tick,
+also appends one line to `~/.teyla/load-threads.tsv` (time, level, load1, runnable_total, sim, compile, java, tests, node,
+python, other, top3; bounded to ~1 MB; `load.tsv` is unchanged). It costs two `ps` calls (about 0.1 s) and only on those
+samples; OK and BUSY samples write nothing. The count is of threads whose state starts with `R` in `ps -axM`, assigned to the
+category of the owning process by its full command, first match winning: `sim` (CoreSimulator or simruntime in the path),
+`compile` (swift-frontend, clang, ld, swiftc, swift-driver, swift-plugin, swift-build, SWBBuildService, xcodebuild), `java`
+(java, gradle), `tests` (swiftpm-testing, xctest, pytest), `node` (node, bun, deno), `python`, `other`; `top3` is the three
+executables with the most runnable threads (`name:count`). A failed `ps` writes nothing and never raises. `teyla load
+--threads [--days N]` prints, for CRITICAL and for WORSENING samples, the sample count, the median runnable total, per
+category the median count and median share (sorted by share) and the five most frequent top commands.
 
 Decision log (`log_decision`). Every `--admit` and every `--wait` appends what it decided to
 `~/.teyla/guard-decisions.tsv`: time, kind, verdict, admitted or refused, reason, cwd, harness. A wait
@@ -1524,6 +1538,193 @@ def record(snap: Snapshot, verdict: Verdict, path: pathlib.Path | None = None,
     return path
 
 
+# --- runnable threads by category -------------------------------------------------------------------
+
+THREADS_COLUMNS = ["time", "level", "load1", "runnable_total", "sim", "compile", "java", "tests", "node", "python",
+                   "other", "top3"]
+THREAD_CATEGORIES = ("sim", "compile", "java", "tests", "node", "python", "other")
+THREADS_LEVELS = (CRITICAL, WORSENING)         # the levels that write a row; OK and BUSY samples cost nothing
+THREADS_MAX_BYTES = 1024 * 1024
+
+_CAT_SIM = re.compile(r"CoreSimulator|simruntime")
+_CAT_COMPILE = re.compile(r"(?:^|/)(?:swift-frontend|clang(?:\+\+|-\d+)?|ld|swiftc|swift-driver|swift-plugin[\w-]*|"
+                          r"swift-build|SWBBuildService|xcodebuild)(?:\s|$)")
+_CAT_JAVA = re.compile(r"(?:^|/)(?:java|gradle|gradlew)(?:\s|$)|GradleDaemon|GradleWrapperMain|KotlinCompileDaemon", re.I)
+_CAT_TESTS = re.compile(r"swiftpm-testing|xctest|\.xctest|(?:^|/|\s)pytest(?:\s|$)|py\.test", re.I)
+_CAT_NODE = re.compile(r"(?:^|/)(?:node|bun|deno)(?:\s|$)")
+_CAT_PYTHON = re.compile(r"(?:^|/)python[\d.]*(?:\s|$)", re.I)
+
+
+def thread_category(command: str) -> str:
+    """The category of one process, from its full command; the first match wins."""
+    if _CAT_SIM.search(command):
+        return "sim"
+    if _CAT_COMPILE.search(command):
+        return "compile"
+    if _CAT_JAVA.search(command):
+        return "java"
+    if _CAT_TESTS.search(command):
+        return "tests"
+    if _CAT_NODE.search(command):
+        return "node"
+    if _CAT_PYTHON.search(command):
+        return "python"
+    return "other"
+
+
+_BUNDLE = re.compile(r".*?\.(?:app|appex|xpc|xctest|framework|simruntime|bundle)/")
+
+
+def _exe_name(command: str) -> str:
+    """Basename of the executable, sanitized like `_top3`. A path may hold spaces only inside a bundle
+    (`iOS 27.0.simruntime/...`, `Google Chrome Helper.app/...`): then the executable runs up to the first ` -` argument;
+    otherwise it is the first word."""
+    cmd = command.strip()
+    pre = cmd.split(" -", 1)[0]
+    exe = pre if _BUNDLE.match(pre) else (cmd.split(None, 1)[0] if cmd else "")
+    return _TOP_UNSAFE.sub("_", os.path.basename(exe.rstrip("/")) or exe)
+
+
+def runnable_threads(ps_m: str, ps_cmd: str) -> dict | None:
+    """Runnable threads (state starts with `R`) per category from one `ps -axM` and one `ps -axo pid=,command=`.
+
+    `ps -axM` prints one line per thread. The first line of a process starts at column 0 with its user
+    (`USER PID TT %CPU STAT ...`); every further thread line starts with blank padding and has no user or tty
+    (`PID %CPU STAT ...`). Returns {"total", "counts" (per category), "top3" ("name:count,...")}, or None when
+    either text holds no usable line."""
+    cmds: dict[int, str] = {}
+    for ln in ps_cmd.splitlines():
+        parts = ln.strip().split(None, 1)
+        if len(parts) == 2 and parts[0].isdigit():
+            cmds[int(parts[0])] = parts[1]
+    per_pid: dict[int, int] = {}
+    seen = 0
+    for ln in ps_m.splitlines()[1:]:
+        f = ln.split()
+        if not f:
+            continue
+        try:
+            if ln[0].isspace():
+                pid, state = int(f[0]), f[2]
+            else:
+                pid, state = int(f[1]), f[4]
+        except (ValueError, IndexError):
+            continue
+        seen += 1
+        if state.startswith("R"):
+            per_pid[pid] = per_pid.get(pid, 0) + 1
+    if not seen or not cmds:
+        return None
+    counts = dict.fromkeys(THREAD_CATEGORIES, 0)
+    by_name: dict[str, int] = {}
+    for pid, n in per_pid.items():
+        cmd = cmds.get(pid, "")
+        counts[thread_category(cmd)] += n
+        name = _exe_name(cmd) if cmd else f"pid{pid}"
+        by_name[name] = by_name.get(name, 0) + n
+    top = sorted(by_name.items(), key=lambda kv: (-kv[1], kv[0]))[:3]
+    return {"total": sum(per_pid.values()), "counts": counts, "top3": ",".join(f"{n}:{c}" for n, c in top)}
+
+
+def sample_threads(run: Runner = run_system) -> dict | None:
+    """`runnable_threads` over two `ps` calls. Never raises: a failed or timed-out `ps` is None."""
+    try:
+        rc1, ps_m = run(["ps", "-axM"], 20)
+        if rc1 != 0:
+            return None
+        rc2, ps_cmd = run(["ps", "-axo", "pid=,command="], 20)
+        if rc2 != 0:
+            return None
+        return runnable_threads(ps_m, ps_cmd)
+    except Exception:  # noqa: BLE001 — recording must never break the guard
+        return None
+
+
+def threads_path() -> pathlib.Path:
+    from .corrections import teyla_home
+    return teyla_home() / "load-threads.tsv"
+
+
+def record_threads(snap: Snapshot, verdict: Verdict, run: Runner = run_system, path: pathlib.Path | None = None,
+                   max_bytes: int = THREADS_MAX_BYTES) -> pathlib.Path | None:
+    """On a CRITICAL or WORSENING sample, append one line to `~/.teyla/load-threads.tsv`: which category the
+    runnable threads belong to. Other levels write nothing and run no `ps`. Never raises; None when nothing was written."""
+    if verdict.level not in THREADS_LEVELS:
+        return None
+    try:
+        t = sample_threads(run)
+        if t is None:
+            return None
+        path = pathlib.Path(path) if path else threads_path()
+        c = t["counts"]
+        fields = [snap.time, verdict.level, "" if snap.load1 is None else f"{snap.load1:.2f}", str(t["total"]),
+                  *(str(c[k]) for k in THREAD_CATEGORIES), t["top3"]]
+        _append(path, THREADS_COLUMNS, fields, max_bytes)
+        return path
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def read_threads(since: float = 0.0, path: pathlib.Path | None = None) -> list[dict]:
+    """The rows of `load-threads.tsv` from `since` (epoch seconds) on; junk lines are skipped."""
+    path = pathlib.Path(path) if path else threads_path()
+    try:
+        lines = path.read_text(errors="replace").splitlines()
+    except OSError:
+        return []
+    rows = []
+    for ln in lines:
+        cells = ln.split("\t")
+        if ln.startswith("#") or len(cells) != len(THREADS_COLUMNS):
+            continue
+        rec = dict(zip(THREADS_COLUMNS, cells))
+        try:
+            rec["ts"] = dt.datetime.fromisoformat(rec["time"]).timestamp()
+            rec["total"] = int(rec["runnable_total"])
+            rec["counts"] = {k: int(rec[k]) for k in THREAD_CATEGORIES}
+        except (ValueError, OverflowError):
+            continue
+        if rec["level"] not in THREADS_LEVELS or rec["ts"] < since:
+            continue
+        rec["tops"] = [x.rpartition(":")[0] for x in rec["top3"].split(",") if x]
+        rows.append(rec)
+    return rows
+
+
+def _median(xs: list[float]) -> float:
+    s = sorted(xs)
+    n = len(s)
+    return 0.0 if not n else (s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2)
+
+
+def render_threads(rows: list[dict], days: float) -> str:
+    """Per level: samples, median runnable threads, and per category the median count and median share."""
+    if not rows:
+        return ("no runnable-thread rows recorded yet: rows come from `teyla load --record` (and the guard tick) "
+                "on CRITICAL and WORSENING samples")
+    out = [f"runnable threads by category, last {days:g} days ({len(rows)} samples)"]
+    for level in THREADS_LEVELS:
+        sub = [r for r in rows if r["level"] == level]
+        if not sub:
+            continue
+        out.append("")
+        out.append(f"{level}: {len(sub)} samples, median runnable threads {_median([r['total'] for r in sub]):g}")
+        stats = []
+        for cat in THREAD_CATEGORIES:
+            counts = [r["counts"][cat] for r in sub]
+            shares = [r["counts"][cat] / r["total"] if r["total"] else 0.0 for r in sub]
+            stats.append((cat, _median(counts), _median(shares)))
+        for cat, med, share in sorted(stats, key=lambda x: (-x[2], -x[1], x[0])):
+            out.append(f"  {cat:<8}{med:>7g} median threads  {share * 100:>5.0f}% median share")
+        freq: dict[str, int] = {}
+        for r in sub:
+            for n in r["tops"]:
+                freq[n] = freq.get(n, 0) + 1
+        top = sorted(freq.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
+        out.append("  top commands: " + (", ".join(f"{n} ({c})" for n, c in top) if top else "none"))
+    return "\n".join(out)
+
+
 def _when(v) -> float | None:
     if v is None:
         return None
@@ -1944,6 +2145,9 @@ def volume_refusal(kind: str, cfg: dict | None = None) -> str:
 
 def cmd_load(args, run: Runner = run_system) -> int:
     conf = guard_conf()
+    if getattr(args, "threads", False):
+        print(render_threads(read_threads(time.time() - args.days * 86400), args.days))
+        return 0
     if args.replay:
         if args.day:
             try:
@@ -1992,6 +2196,7 @@ def cmd_load(args, run: Runner = run_system) -> int:
             record(snap, verdict)
         except OSError as e:
             print(f"teyla load: could not record: {e}", file=sys.stderr)
+        record_threads(snap, verdict, run)
     bypassed, _ = report_bypassed(snap, verdict.level, log=False)
     shown = with_hold(verdict, trend)
     if args.json:
@@ -2025,7 +2230,8 @@ def register(sp):
     q.add_argument("--kind", choices=KINDS, default="build", help="what --wait waits to start (default build)")
     q.add_argument("--priority", action="store_true", help="--wait: go ahead of normal waiters (a release upload or archive); among priority waiters, arrival order")
     q.add_argument("--replay", action="store_true", help="run the verdict and admission over ~/.teyla/load.tsv: per day, the OK/BUSY/CRITICAL counts and how many samples would admit a sim or a build")
-    q.add_argument("--days", type=float, default=7, metavar="N", help="--replay: how many days back (default 7)")
+    q.add_argument("--threads", action="store_true", help="summarise ~/.teyla/load-threads.tsv: at CRITICAL and WORSENING samples, which category (sim, compile, java, tests, node, python, other) held the runnable threads")
+    q.add_argument("--days", type=float, default=7, metavar="N", help="--replay/--threads: how many days back (default 7)")
     q.add_argument("--day", metavar="YYYY-MM-DD", help="--replay: one line per change of state on that day, instead of the table")
     q.add_argument("--timeout", type=float, default=None, metavar="S", help="--wait: give up after S seconds (default guard.wait_timeout_s)")
     q.add_argument("--cwd", default=None, metavar="DIR", help="--admit/--wait: where the work runs (default: here); the settle lease"

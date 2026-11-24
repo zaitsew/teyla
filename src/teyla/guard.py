@@ -430,6 +430,7 @@ def tick(conf: dict | None = None, env: Env | None = None, dry: bool = False) ->
         res["lines"].append("dry run: nothing is recorded, written or stopped")
     else:
         load.record(snap, verdict)
+        load.record_threads(snap, verdict, env.run)
         res["lines"] += update_alert(snap, verdict, conf, env)
     found, new = load.report_bypassed(snap, verdict.level, log=not dry)
     res["bypassed"] = found
