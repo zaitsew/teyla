@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.61.1 — 2026-11-24
+
 - `teyla policy sync`: the note under the compacted merge-approved list also names the file the list header points to, for owners who keep the verbatim provenance outside CLAUDE.md.
 
 ## 0.61.0 — 2026-11-24
