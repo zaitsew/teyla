@@ -86,7 +86,7 @@ def test_code_push_queues_then_runs_check_sh(box):
     sha = commit(box.repo, {"src/mod.py": "x = 1\n"}, "code")
     p = box.push(sha)
     assert p.returncode == 0, p.stderr
-    assert box.marked() == ["teyla load --wait --kind build", "check"]
+    assert box.marked() == ["teyla load --wait --kind lane", "check"]
 
 
 @pytest.mark.parametrize("path", ["tests/test_x.py", "apps/ios/App.swift", "scripts/tool.sh", "check.sh",
@@ -118,7 +118,7 @@ def test_merge_commit_that_brings_code_runs_the_tests(box):
     sha = merged_main_into_feature(box, {"src/mod.py": "x = 1\n"})
     p = box.push(sha)
     assert p.returncode == 0, p.stderr
-    assert box.marked() == ["teyla load --wait --kind build", "check"]
+    assert box.marked() == ["teyla load --wait --kind lane", "check"]
 
 
 def test_merge_commit_that_brings_only_docs_runs_the_document_tests(box):
@@ -148,7 +148,7 @@ def test_documents_and_code_in_one_push_run_the_full_check_once(box):
     commit(box.repo, {"README.md": "changed\n"}, "docs")
     sha = commit(box.repo, {"src/mod.py": "x = 1\n"}, "code")
     assert box.push(sha).returncode == 0
-    assert box.marked() == ["teyla load --wait --kind build", "check"]
+    assert box.marked() == ["teyla load --wait --kind lane", "check"]
 
 
 def test_failing_document_tests_refuse_the_push(tmp_path):
@@ -208,7 +208,7 @@ def test_ref_deletion_runs_nothing(box):
 
 def test_this_repos_hook_names_check_sh():
     text = HOOK.read_text()
-    assert "./check.sh" in text and "teyla load --wait --kind build" in text
+    assert "./check.sh" in text and "teyla load --wait --kind lane" in text
     assert "./check.sh docs" in text
     assert "TEYLA_PREPUSH_TESTS" in text
 

@@ -49,8 +49,9 @@ one-minute load >= `guard.load_crit_per_core` x cores, or the compressor >= `gua
 of RAM, or free disk under `guard.disk_crit_gb` (APFS swap lives in the same container, so a full disk
 leaves the memory compressor nowhere to go). WORSENING (needs the trend, below) when memory is getting worse
 right now: the swap-out rate over the last 3 minutes >= `guard.swapout_mb_s`, swap used growing by more than
-`guard.swap_grow_gb_30m` per 30 minutes (fitted over `guard.trend_window_min` minutes, and still growing in the last 5),
-or free disk on course to fall under `guard.disk_crit_gb` within 30 minutes. BUSY for the warn thresholds of
+`guard.swap_grow_gb_30m` per 30 minutes (fitted over `guard.trend_window_min` minutes, and still growing in the last 5)
+while the swap-out rate is >= 5 MB/s or memory pressure is >= 2 (2026-11-23: the file grows without swapping, and growth
+alone was 219 of 885 refusals since 2026-11-17 at swap-out 0 MB/s), or free disk on course to fall under `guard.disk_crit_gb` within 30 minutes. BUSY for the warn thresholds of
 memory pressure, compressor, load and disk, or more booted simulators than `guard.max_sims`, or more build
 drivers than `guard.max_builds`. Swap used alone is information, not a warning: it stayed above 25% of RAM on
 70-95% of samples every day and carried no signal.
@@ -765,8 +766,13 @@ def _worsening(trend: "Trend | None", snap: Snapshot, conf: dict | None) -> list
     if rate is not None and rate_at > 0 and rate >= rate_at:
         out.append(f"swap-out {rate:.0f} MB/s over the last {SWAPOUT_WINDOW_S // 60} min (worsening ≥ {rate_at:g} MB/s)")
     grow_at = _num(conf, "swap_grow_gb_30m")
+    # 2026-11-23: macOS grows the swap file without swapping (219 of 885 refusals since 2026-11-17 were this
+    # signal alone; swap-out was 0 MB/s at the median and a third had pressure 1). Growth counts only
+    # while pages are really being written out or the kernel reports pressure.
+    swap_pushed = ((trend.swapout_mb_s is not None and trend.swapout_mb_s >= SWAP_ACTIVE_MB_S)
+                   or (snap.pressure is not None and snap.pressure >= 2))
     if (trend.swap_gb_30m is not None and grow_at > 0 and trend.swap_gb_30m > grow_at
-            and trend.swap_recent_gb is not None and trend.swap_recent_gb > RECENT_GROWTH_GB):
+            and trend.swap_recent_gb is not None and trend.swap_recent_gb > RECENT_GROWTH_GB and swap_pushed):
         out.append(f"swap growing {trend.swap_gb_30m:.1f} GB per 30 min (+{trend.swap_recent_gb:.1f} GB in the last 5 min;"
                    f" worsening > {grow_at:g} GB)")
     crit_gb = _num(conf, "disk_crit_gb")

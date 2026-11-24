@@ -903,12 +903,12 @@ def test_replay_turns_a_record_back_into_a_snapshot():
 
 
 def spike_rows(minutes=range(0, 41), spike_at=20, base="2026-10-18T22:{:02d}:00+02:00", grow_gb_per_min=0.5):
-    """Calm, then swap climbs by `grow_gb_per_min` for five minutes from `spike_at`, then holds."""
+    """Calm, then swap climbs by `grow_gb_per_min` for five minutes from `spike_at`, memory pressure 2 for nine, then holds."""
     out, swap = [], 4 * GIB
     for m in minutes:
         if spike_at <= m < spike_at + 5:
             swap += int(grow_gb_per_min * GIB)
-        out.append(rec_row(base.format(m), swap_used_bytes=swap))
+        out.append(rec_row(base.format(m), swap_used_bytes=swap, pressure=2 if spike_at <= m < spike_at + 9 else 1))
     return out
 
 
@@ -1031,13 +1031,28 @@ def test_slopes_are_fitted_over_the_window_and_projected_ahead():
     assert load.compute_trend(old, now_snap(), {}).points == 1                         # older than the window: ignored
 
 
+def test_swap_growth_alone_is_not_worsening_but_growth_with_pressure_or_swap_out_is():
+    rows = [hist_row(m, swap_gb=4 + 0.2 * m, swapout=0) for m in range(0, 15)]       # +6.5 GB per 30 min, swap-out 0
+    s = now_snap(15, swap_gb=7.0, swapout=0, pressure=1)
+    t = load.compute_trend(rows, s, {})
+    assert t.swap_gb_30m > 4 and t.swapout_mb_s == pytest.approx(0.0)
+    assert load.assess(s, {}, t).level != "WORSENING"
+    s2 = now_snap(15, swap_gb=7.0, swapout=0, pressure=2)
+    assert load.assess(s2, {}, load.compute_trend(rows, s2, {})).level == "WORSENING"
+    s3 = now_snap(15, swap_gb=7.0, swapout=8 * 1024 ** 2 * 180, pressure=1)           # 8 MB/s over the last 3 min
+    t3 = load.compute_trend(rows, s3, {})
+    assert t3.swapout_mb_s == pytest.approx(8.0, abs=0.5)
+    v3 = load.assess(s3, {}, t3)
+    assert v3.level == "WORSENING" and any(r.startswith("swap growing") for r in v3.reasons)
+
+
 def test_worsening_trips_on_each_signal_alone_and_not_on_a_flat_history():
     flat = [hist_row(m) for m in range(0, 15)]
     assert load.assess(now_snap(), {}, load.compute_trend(flat, now_snap(), {})).level == "OK"
     grow = [hist_row(m, swap_gb=4 + 0.2 * m) for m in range(0, 15)]
-    s = now_snap(15, swap_gb=7.0)
+    s = now_snap(15, swap_gb=7.0, pressure=2)
     v = load.assess(s, {}, load.compute_trend(grow, s, {}))
-    assert v.level == "WORSENING" and v.exit_code == 1 and v.worsening == v.reasons
+    assert v.level == "WORSENING" and v.exit_code == 1 and v.worsening == v.reasons[:1]
     assert v.reasons[0].startswith("swap growing 6.0 GB per 30 min (+1.0 GB in the last 5 min")
     stopped = [hist_row(m, swap_gb=min(4 + 0.5 * m, 7.0)) for m in range(0, 15)]       # it climbed, then flattened
     s2 = now_snap(15, swap_gb=7.0)
@@ -1095,7 +1110,7 @@ def worse_trend(held_ago_min=None, level="WORSENING"):
 
 
 def test_a_worsening_machine_refuses_new_sims_and_builds_whatever_the_count_but_not_lanes():
-    s = now_snap(15, swap_gb=7.0, procs=procs(sims=0, builds=0))
+    s = now_snap(15, swap_gb=7.0, pressure=2, procs=procs(sims=0, builds=0))
     t = load.compute_trend(worse_trend(), s, {})
     for kind in ("sim", "build"):
         d = load.decide(kind, s, {}, t)
@@ -1138,10 +1153,10 @@ def test_the_caps_still_apply_when_nothing_is_wrong_and_stay_two():
 def test_current_trend_reads_the_recorder_file_and_the_decision_log(tmp_path):
     rec_path, dec_path = tmp_path / "load.tsv", tmp_path / "d.tsv"
     for m in range(0, 15):
-        s = now_snap(m, swap_gb=4 + 0.2 * m, swapout=m * 1024 ** 2 * 60)
+        s = now_snap(m, swap_gb=4 + 0.2 * m, swapout=m * 1024 ** 2 * 60, pressure=2)
         load.record(s, load.assess(s, {}), path=rec_path)
     load.log_decision("sim", "CRITICAL", False, "x", path=dec_path, now=at(14))
-    s = now_snap(15, swap_gb=7.0, swapout=15 * 1024 ** 2 * 60)
+    s = now_snap(15, swap_gb=7.0, swapout=15 * 1024 ** 2 * 60, pressure=2)
     t = load.current_trend(s, {}, records=rec_path, decisions=dec_path)
     assert t.swap_gb_30m == pytest.approx(6.0, abs=0.1) and t.swapout_mb_s == pytest.approx(1.0, abs=0.1)
     assert t.held_level == "CRITICAL" and load.assess(s, {}, t).level == "WORSENING"
