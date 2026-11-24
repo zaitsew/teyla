@@ -678,8 +678,9 @@ def _same_file(a: pathlib.Path, b: pathlib.Path) -> bool:
         return False
 
 
-MERGE_COMPACT_NOTE = ("(Comments stripped in this copy; the dated provenance for each entry is in ~/.claude/CLAUDE.md. "
-                      "A repo added under the standing exception is written there, with the kickoff sentence quoted verbatim.)")
+MERGE_COMPACT_NOTE = ("(Comments stripped in this copy; the dated provenance for each entry is in ~/.claude/CLAUDE.md, "
+                      "or in the file its list header points to. A repo added under the standing exception is written "
+                      "there, with the kickoff sentence quoted verbatim.)")
 
 
 def _compact_merge_block(lines: list[str]) -> list[str]:
