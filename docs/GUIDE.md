@@ -20,7 +20,7 @@ The [README](../README.md) says what Teyla is and what to paste. This page holds
 ## Install and update
 
 ```bash
-uv tool install --python 3.12 git+https://github.com/zaitsew/teyla@v0.60.2   # or: pipx install git+https://github.com/zaitsew/teyla@v0.60.2 (Python 3.11+)
+uv tool install --python 3.12 git+https://github.com/zaitsew/teyla@v0.61.0   # or: pipx install git+https://github.com/zaitsew/teyla@v0.61.0 (Python 3.11+)
 teyla start                          # what your agents cost, and seven changes you can accept one by one and undo
 teyla policy init --owner "Your Name" && teyla policy sync   # one POLICY.md (+ your CLAUDE.md rules) → Claude Code, Codex, Grok, Hermes, Cursor
 teyla plugin install zaitsew/teyla   # the Claude Code plugin with the machine guard (or: claude plugin marketplace add zaitsew/teyla)
@@ -43,7 +43,7 @@ plugin copy Claude Code actually loads, and rewrites the launchd wrappers if the
 `teyla doctor` is the checklist; what is *new* in it shows at the next session start, and
 once a week the digest names the three things worth doing (see [What gets read](#what-gets-read)).
 
-No `uv`? `pipx install git+https://github.com/zaitsew/teyla@v0.60.2`, or `git clone` and run `PYTHONPATH=src python3 -m teyla`. Python 3.11 or newer, nothing else. With `uv`, `--python 3.12` makes it use Python 3.12 and download it (about 25 MB) when the Mac has none in the 3.11 to 3.13 range.
+No `uv`? `pipx install git+https://github.com/zaitsew/teyla@v0.61.0`, or `git clone` and run `PYTHONPATH=src python3 -m teyla`. Python 3.11 or newer, nothing else. With `uv`, `--python 3.12` makes it use Python 3.12 and download it (about 25 MB) when the Mac has none in the 3.11 to 3.13 range.
 
 **Handing it to a second machine:** [`docs/HANDOVER.md`](HANDOVER.md) lists every practice that travels and what to adapt; [`prompts/work-account-kickoff.md`](../prompts/work-account-kickoff.md) is the paste-able version; [`prompts/work-account-update.md`](../prompts/work-account-update.md) updates a machine that already has Teyla and switches on its self-maintenance. **Handing it to an agent instead of a person:** paste "Set up https://github.com/zaitsew/teyla" into Claude Code or Codex; it follows [`AGENTS.md`](../AGENTS.md). For a machine with a longer brief, paste [`prompts/onboard.md`](../prompts/onboard.md) into Claude Code, Codex or Grok on the new machine. It installs, wires the policy, installs the plugin, runs the first review, and produces the feedback file. Corporate machines: no data leaves the machine; every network call (release checks, the daily self-update) and every file Teyla writes are listed there, and `teyla uninstall --dry` lists what is on this machine (`teyla uninstall` reverses it). `teyla prompt onboard` prints the copy that shipped with the installed version.
 

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.61.0 — 2026-11-24
+
 - **The guard records which category holds the runnable threads at a bad sample.** A benchmark showed the load peaks of 300-688 were not compile jobs: at 270-420 runnable threads, about 200 sat in CoreSimulator runtime processes, then java/gradle and test helpers, and only 11-24 in compilers. A CRITICAL or WORSENING sample (from `teyla load --record` or the guard tick) now also appends one line to `~/.teyla/load-threads.tsv`: runnable threads in total and per category (sim, compile, java, tests, node, python, other) plus the top 3 commands, from one `ps -axM` and one `ps -axo pid=,command=` (about 0.1 s, only on those samples; OK and BUSY write nothing; `load.tsv` columns are unchanged). `teyla load --threads [--days N]` summarises it per level: samples, median runnable threads, each category's median count and share, the five most frequent top commands. Read it after a week, before deciding on simulator limits.
 
 ## 0.60.2 — 2026-11-24
