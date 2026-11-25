@@ -36,6 +36,9 @@ into another. The front matter above is the schema `teyla voice check <draft> --
 - `preferred`: words the chart wants; shown by the check, not enforced.
 
 Delete the guidance lines when you are done. UI strings follow `DESIGN.md`, not this file.
+The traits are the same in both: the UI voice (`DESIGN.md` › Voice) is this chart's traits at
+their quietest, so a post and a screen sound like one product. A trait that would not survive in
+an error message is a marketing pose, not a trait.
 
 ## Brief
 - What {{product}} is, in one sentence:

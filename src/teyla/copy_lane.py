@@ -88,8 +88,8 @@ RULES = [
     "No \"please\", no exclamation marks, no \"oops\" or \"uh-oh\" (R11). An error is not a joke.",
     "An error says what happened and what to do, in 2 sentences, without \"we\" (R12).",
     "An empty state names the next step, in 2 sentences (R13).",
-    "No possessive before a noun in a label or title: \"Favorites\", not \"Your Favorites\" (R14).",
-    "Numbers instead of adjectives (R15). The glossary's word for each concept, in every language (R16).",
+    "No possessive before a noun in a label or title: \"Favorites\", not \"Your Favorites\" (R11).",
+    "Numbers instead of adjectives (R17). The glossary's word for each concept, in every language (R16).",
     "Sentence case, one idea, at most 20 words a sentence, active voice (R17). Screen title 5 words. Onboarding step 25 words.",
 ]
 

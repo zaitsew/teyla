@@ -5,6 +5,7 @@ tokens). This file says what every screen must do, whatever the style. `teyla ux
 the mechanical part. The rest is judged in review, on the device, against the rubric in Part 5.
 
 The short version: a screen does one thing, shows it first, and says it in few words.
+Architecture, code, AI routes and speed are in `templates/engineering/PRINCIPLES.md`.
 
 ## How this file works
 
@@ -92,7 +93,9 @@ behaviour and is retested after it.
 Since 2026-10-16 · Scope: every screen · Check: review; the capture matrix's accessibility walk
 
 Tap targets are at least 44 pt (Apple) or 48 dp (Material). Contrast, Dynamic Type up to the
-largest size and VoiceOver or TalkBack labels hold in light and dark.
+largest size and VoiceOver or TalkBack labels hold in light and dark. The screenshot tour
+(`templates/design/ScreenshotTour.swift`) runs `performAccessibilityAudit` on every screen it
+captures; an issue it reports is fixed or named in the PR.
 
 ### R8. Feedback and forgiveness
 Since 2026-10-16 · Scope: every action · Check: review
@@ -100,6 +103,26 @@ Since 2026-10-16 · Scope: every action · Check: review
 Every action shows its result within 100 ms: a state change, a haptic, a toast. A destructive
 action is undoable, or asks once with the object named ("Delete 3 notes"). Prevent the error
 before you explain it: disable what cannot work and keep what the person typed.
+
+### R23. A change made by AI is a proposal on screen: source, preview, accept, Undo
+Since 2026-11-25 · Scope: every surface where a model adds or changes the person's data · Check: review; the engine principle E9 (`templates/engineering/PRINCIPLES.md`) tests that a model output is only a proposal
+
+The model proposes; the person decides. A proposal shows what will change (before and after,
+or the new item as it will look), where it came from (the file, the message, the link) and one
+primary action to accept. An accepted change has Undo. A proposal that matches an existing item
+says so and offers to update it, never to add a second copy. The assistant's own text follows
+the product's voice: it proposes ("Leave at 08:20?"), never claims ("I moved your train"), and
+says one thing about one item. Precedent: Apple Intelligence writing tools, Linear's AI triage,
+Arc/Dia's tidy-up previews.
+
+### R24. Motion and haptics name a kind; Reduce Motion is honoured
+Since 2026-11-25 · Scope: every animation and haptic · Check: `ux check` WARN (10 or more hand-written curves); a product ratchet in its own `check.sh`
+
+A view names the kind of change (select, state change, row in or out, reveal, present), and the
+product's tokens map each kind to a curve, a duration and an optional haptic. Motion explains
+where something came from or went; it never decorates. No bounce, no parallax, no confetti. With
+Reduce Motion on, a move becomes a cross-fade. A haptic marks a commit (a toggle, a drop, an
+accepted proposal), never a scroll or a hover. Source: Apple HIG Motion and Playing haptics.
 
 ## Part 2. Tokens rule
 
@@ -124,11 +147,12 @@ Since 2026-10-16 · Scope: every button label · Check: `ux check` (length); the
 "Add note", "Send invite", "Save changes". Not "OK", not "Submit", not "Click here to continue".
 Apple: a verb on every button.
 
-### R11. No "Please", no exclamation marks, no "oops" or "uh-oh"
-Since 2026-10-16 (Apple words added 2026-10-30) · Scope: all UI copy · Check: `ux check`
+### R11. No "Please", no "!", no "oops", no possessive "Your" in a label
+Since 2026-10-16 (Apple words 2026-10-30; R14 folded in 2026-11-25) · Scope: all UI copy · Check: `ux check`
 
 Say what to do: "Enter a valid email". Not in success messages, empty states or onboarding.
-Apple: an error is not a joke, and it does not apologise for being an error.
+Apple: an error is not a joke, and it does not apologise for being an error. "Favorites", not
+"Your Favorites": the screen is already theirs; a full sentence may say "Your trip is saved".
 
 ### R12. An error says what happened and what to do, without "we"
 Since 2026-10-16 (no "we": 2026-10-30) · Scope: every error string · Check: `ux check` (where the call shows an error); the copy judge
@@ -141,17 +165,6 @@ Since 2026-10-30 · Scope: every empty list or feed · Check: `ux check` (length
 
 Two sentences at most: what goes here, and the one action that fills it.
 
-### R14. No possessive "Your" before a noun in a label or title
-Since 2026-10-30 · Scope: titles, tabs, section headers, buttons · Check: `ux check` (a label of three words or fewer starting with "Your") · Source: Apple HIG Writing
-
-"Favorites", not "Your Favorites". The screen is already theirs. A full sentence may say "Your
-trip is saved".
-
-### R15. Numbers instead of adjectives
-Since 2026-10-16 · Scope: all UI copy · Check: review
-
-"3 days left", not "almost out of time". "Synced 2 min ago", not "recently synced".
-
 ### R16. The same word for the same thing, in every language
 Since 2026-10-16 · Scope: all UI copy · Check: review; the copy judge against the glossary
 
@@ -159,11 +172,11 @@ If it is a "trip" in one place it is a "trip" in all. The product's `DESIGN.md` 
 glossary, one word per concept in each language. Copy is written per language from the same
 brief, never translated word for word. Localization stays in its own files.
 
-### R17. Short: sentence case, one idea, say it once
-Since 2026-10-16 · Scope: all UI copy · Check: review; the budgets below
+### R17. Short: sentence case, one idea, say it once, numbers instead of adjectives
+Since 2026-10-16 (R15 folded in 2026-11-25) · Scope: all UI copy · Check: review; the budgets below
 
 At most 20 words a sentence, active voice. Do not put the same fact in a title, a subtitle
-and a hint.
+and a hint. "3 days left", not "almost out of time"; "Synced 2 min ago", not "recently synced".
 
 ### Per-control length budgets
 
@@ -288,3 +301,9 @@ Not counted toward the 20. Advice and tests that help, and rules that were cut t
 - **Undo beats confirm.** Prefer an undo toast to a dialog when the action is cheap to reverse.
   (advisory, since 2026-10-30)
 - **Every change is a decision with a scope** (was R19; folded into R22 on 2026-11-10).
+- **No possessive "Your"** (was R14; folded into R11 on 2026-11-25 to make room for R23).
+- **Numbers instead of adjectives** (was R15; folded into R17 on 2026-11-25 to make room for R24).
+- **Density follows the platform.** Body text at the platform's default size, rows at the
+  system's list height; a screen that shows fewer items than the platform's own app for the
+  same job is too loose. (advisory, since 2026-11-25; one owner build fitted four events on a
+  screen)
