@@ -398,14 +398,16 @@ def _start_with_fake_teyla(tmp_path):
     return log
 
 
-def _wait_for(path: pathlib.Path, seconds: float = 5.0) -> str:
+def _wait_for(path: pathlib.Path, want: str, seconds: float = 30.0) -> str:
+    """The text of `path` once it holds `want`, or what it holds after `seconds`. The hook starts `policy sync` and
+    `asks` detached and either may write first, so the first line is not the one to wait for."""
     import time
     end = time.monotonic() + seconds
-    while time.monotonic() < end:
-        if path.exists() and path.read_text():
-            return path.read_text()
+    while True:
+        text = path.read_text() if path.exists() else ""
+        if want in text or time.monotonic() >= end:
+            return text
         time.sleep(0.05)
-    return path.read_text() if path.exists() else ""
 
 
 def _generated_agents(home: pathlib.Path, claude_newer: bool):
@@ -425,7 +427,7 @@ def _generated_agents(home: pathlib.Path, claude_newer: bool):
 def test_session_start_syncs_a_generated_agents_md_older_than_claude_md(tmp_path):
     _generated_agents(tmp_path / "home", claude_newer=True)
     log = _start_with_fake_teyla(tmp_path)
-    assert "policy sync --quiet" in _wait_for(log)
+    assert "policy sync --quiet" in _wait_for(log, "policy sync --quiet")
 
 
 def test_session_start_leaves_a_current_or_hand_written_agents_md_alone(tmp_path):
@@ -453,7 +455,7 @@ def test_session_start_syncs_when_an_imported_file_is_newer(tmp_path):
     (home / "ops" / "releases.md").write_text("ship it\n")
     os.utime(home / "ops" / "releases.md", (time.time() + 60,) * 2)
     log = _start_with_fake_teyla(tmp_path)
-    assert "policy sync --quiet" in _wait_for(log)
+    assert "policy sync --quiet" in _wait_for(log, "policy sync --quiet")
 
 
 def test_session_start_syncs_a_symlink_once_claude_md_changes(tmp_path):
@@ -469,7 +471,7 @@ def test_session_start_syncs_a_symlink_once_claude_md_changes(tmp_path):
     stamp.write_text("")
     os.utime(stamp, (time.time() - 3600,) * 2)
     log = _start_with_fake_teyla(tmp_path)
-    assert "policy sync --quiet" in _wait_for(log)
+    assert "policy sync --quiet" in _wait_for(log, "policy sync --quiet")
     log.unlink()
     _start_with_fake_teyla(tmp_path)  # the stamp is fresh now: no second sync
     time.sleep(0.5)
