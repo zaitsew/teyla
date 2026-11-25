@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from teyla import cli, offers, pricing, registry, routine_install
+from teyla import cli, offers, plugin_install, pricing, registry, routine_install
 from teyla.web import api as api_mod
 from teyla.web import server as server_mod
 
@@ -25,6 +25,8 @@ def _isolated(monkeypatch, tmp_path):
     monkeypatch.setattr(pricing, "OVERRIDE_PATH", tmp_path / "no-prices.json")
     # O7 writes launchd jobs; no test here may.
     monkeypatch.setattr(routine_install, "install", lambda *a, **k: ["stub: routine installed"])
+    # O6 clones Teyla's plugin from github.com, which takes longer than the client below waits.
+    monkeypatch.setattr(plugin_install, "install", lambda *a, **k: ["stub: plugin installed"])
     try:                                                   # a refresh of the first-screen figures starts a process
         from teyla import figures
         monkeypatch.setattr(figures, "spawn_refresh", lambda *a, **k: None, raising=False)
@@ -93,13 +95,21 @@ class Web:
 @pytest.fixture
 def web(machine, tmp_path):
     srv = server_mod.Server(port=0, api=api_mod.Api(cache=tmp_path / "web-cache.json"), idle_s=3600, watch_s=0.05)
+    # No thread of this server may outlive the test: once the fake HOME is undone, a late apply or recount
+    # writes the real ~/.teyla, and its stderr lands in the next test. Non-daemon request threads are joined
+    # by server_close().
+    srv.daemon_threads = False
     t = threading.Thread(target=srv.serve, daemon=True)
     t.start()
     w = Web(srv)
     w.login()
     yield w
     srv.shutdown()
-    t.join(5)
+    t.join(60)
+    for job in srv.api.jobs.values():                       # after the requests: an apply starts a recount
+        job.join(60)
+    left = [j.name for j in srv.api.jobs.values() if j.get()["refreshing"]] + (["server"] if t.is_alive() else [])
+    assert not left, f"still running after the test: {left}"
 
 
 # --- the security model -------------------------------------------------------------------------

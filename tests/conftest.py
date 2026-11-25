@@ -133,6 +133,22 @@ def _no_real_launchd(tmp_path_factory, monkeypatch):
     monkeypatch.setattr(subprocess, "run", run)
 
 
+@pytest.fixture(autouse=True)
+def _no_real_git_clone(monkeypatch):
+    """No test clones from a remote. `plugin_install` clones github.com when it applies offer O6; the web test of
+    that offer forgot to stub it and passed only while the clone beat its 10 s client timeout. `pytest.fail` is
+    not an `Exception`, so the code under test cannot turn the refusal into a "plugin not installed" line."""
+    real_run = subprocess.run
+
+    def run(cmd, *a, **k):
+        argv = [str(x) for x in cmd] if isinstance(cmd, (list, tuple)) else str(cmd).split()
+        if (argv and os.path.basename(argv[0]) == "git" and "clone" in argv
+                and any(x.startswith(("https://", "http://", "ssh://", "git://", "git@")) for x in argv)):
+            pytest.fail(f"a test reached a real git clone: {' '.join(argv)}: stub the call that clones")
+        return real_run(cmd, *a, **k)
+    monkeypatch.setattr(subprocess, "run", run)
+
+
 _PROCESS_TOOLS = {"osascript", "killall", "pkill"}
 
 
