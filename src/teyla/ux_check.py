@@ -20,11 +20,15 @@ What is counted (a "literal" is a value written in a view; the product's tokens 
               `.padding(horizontal = 12.dp)`. Zero and expressions (`2 * Space.m`) are not counted.
     crowded   SwiftUI only: a `struct X: View` whose body holds more than 4 `Button`,
               `NavigationLink` and `.onTapGesture` together.
+    motion    SwiftUI only: a hand-written animation curve, `withAnimation(.<curve>` or
+              `.animation(.<curve>`, where <curve> is snappy, spring, easeOut, easeIn, easeInOut,
+              linear, smooth, bouncy or interactiveSpring (a duration argument is allowed). Backs
+              STANDARD R24: motion names a kind and the product's tokens hold the curve.
     copy      UI strings: `Text("...")`, `Button("...")`, `Label`, `Toggle`, `Section`,
               `ContentUnavailableView` and `.navigationTitle("...")` in Swift; `Text("...")` in
               Compose; `<string>` values of Android `res/values/` and `values-en*`;
               `Localizable.strings` and `.xcstrings` in English. Counted, against the copy
-              rules of the standard (R10 to R14 and the per-control budgets):
+              rules of the standard (R10 to R13 and the per-control budgets):
                 please   a string with the word "Please";
                 bang     a string with "!";
                 oops     a string with "oops", "whoops" or "uh-oh";
@@ -60,6 +64,7 @@ Verdicts, per repo (the worst finding wins; a repo with no UI code and no standa
     tokens    L = font + colour + spacing literals; D = L per 1,000 non-blank lines of UI files.
               WARN: L >= 10 and D >= 5.   FIX: L >= 100 and D >= 10.
     crowded   WARN: 1 or more screens. Never FIX: four tap targets is a prompt to look (R5).
+    motion    WARN: 10 or more hand-written curves. Never FIX: a ratchet is the product's job (R24).
     copy      C = the sum of the copy counts above.
               WARN: C >= 1.               FIX: C >= 25.
     design    WARN: no DESIGN.md in a repo with UI code, or one with template placeholders.
@@ -91,6 +96,8 @@ TOKENS_WARN_MIN, TOKENS_WARN_DENSITY = 10, 5.0
 TOKENS_FIX_MIN, TOKENS_FIX_DENSITY = 100, 10.0
 CROWDED_TAPS = 4          # more than this many tap targets in one View struct: WARN, never FIX
 CROWDED_WARN = 1
+MOTION_WARN = 10          # hand-written animation curves in views: WARN, never FIX
+SW_MOTION = re.compile(r"(?:\bwithAnimation|\.animation)\(\s*\.(?:snappy|spring|easeOut|easeIn|easeInOut|linear|smooth|bouncy|interactiveSpring)\b")
 COPY_WARN, COPY_FIX = 1, 25
 BUTTON_MAX_WORDS = 3      # the per-control budgets of the standard
 TITLE_MAX_WORDS = 5
@@ -389,7 +396,7 @@ def _copy(strings: list[tuple[str, bool, str]]) -> dict:
 # --- one file -----------------------------------------------------------------------------------
 
 def _new() -> dict:
-    return {"font": 0, "colour": 0, "spacing": 0, **dict.fromkeys(COPY_KEYS, 0)}
+    return {"font": 0, "colour": 0, "spacing": 0, "motion": 0, **dict.fromkeys(COPY_KEYS, 0)}
 
 
 def _add(a: dict, b: dict):
@@ -415,6 +422,7 @@ def scan_swift(text: str) -> tuple[dict, list[dict]]:
                 strings.append((m.group(2), kind == "Button", ctx if kind == "Text" else ""))
         for m in SW_NAV_TITLE.finditer(ln):
             strings.append((m.group(1), False, TITLE))
+    c["motion"] = len(SW_MOTION.findall(code))  # whole text: a curve may follow "(" on the next line
     _add(c, _copy(strings))
     crowded = []
     for m in re.finditer(r"\bstruct\s+(\w+)\s*:\s*([^{\n]*)\{", code):
@@ -637,6 +645,11 @@ def verdicts(root: pathlib.Path, a: dict) -> list[dict]:
             "crowded", sev, top["file"], top["line"],
             f"{n} screen(s) with more than {CROWDED_TAPS} tap targets in one View: {names}",
             "keep one primary action per screen; move the rest behind a menu, a detail screen or a sheet"))
+    if c["motion"] >= MOTION_WARN:
+        findings.append(_finding(
+            "motion", WARN, "", 0,
+            f"{c['motion']} hand-written animation curves in views (withAnimation / .animation with a named curve)",
+            "name the kind of change and take the curve from the product's motion tokens (R24)"))
     cp = copy_total(c)
     if cp >= COPY_WARN:
         sev = FIX if cp >= COPY_FIX else WARN
@@ -707,12 +720,12 @@ def totals(reports: list[dict]) -> dict:
 def render(reports: list[dict]) -> str:
     L: list[str] = []
     w = max([len(r["repo"]) for r in reports] + [4])
-    L.append(f"{'repo':<{w}}  verdict  ui   files  font  colour  space  /kloc  crowded  copy  design")
+    L.append(f"{'repo':<{w}}  verdict  ui   files  font  colour  space  /kloc  crowded  motion  copy  design")
     for r in reports:
         c = r["counts"]
         ui = "+".join(p[:2] for p in r["platforms"]) or "-"
         copy = copy_total(c)
-        L.append(f"{r['repo']:<{w}}  {r['verdict']:<7}  {ui:<4} {r['ui_files']:>5}  {c['font']:>4}  {c['colour']:>6}  {c['spacing']:>5}  {r['density']:>5}  {len(r['crowded']):>7}  {copy:>4}  {'yes' if r['design_doc'] else 'no' if r['ui_files'] else '-'}")
+        L.append(f"{r['repo']:<{w}}  {r['verdict']:<7}  {ui:<4} {r['ui_files']:>5}  {c['font']:>4}  {c['colour']:>6}  {c['spacing']:>5}  {r['density']:>5}  {len(r['crowded']):>7}  {c['motion']:>6}  {copy:>4}  {'yes' if r['design_doc'] else 'no' if r['ui_files'] else '-'}")
     for r in reports:
         if not r["findings"]:
             continue
