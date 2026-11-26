@@ -420,3 +420,74 @@ def test_hermes_auto_accept_ignores_brackets_inside_block_scalars(home):
     assert approved("prompt: |  # text\n  [ not yaml\nhooks_auto_accept: yes\n") == 4
     # a key whose value merely contains `|` is not a block scalar
     assert approved("agent: {\n  x: a | b\n}\nhooks_auto_accept: true\n") == 4
+
+
+def _codex_file(home):
+    return home / ".codex" / "hooks.json"
+
+
+def _codex_harness():
+    return harness.harnesses()["codex"]
+
+
+def test_codex_foreign_groups_after_teyla_are_wired_and_untouched(home):
+    harness.sync(dry=False)
+    p = _codex_file(home)
+    d = json.loads(p.read_text())
+    d["hooks"]["PreToolUse"] += [
+        {"matcher": "Bash", "hooks": [{"type": "command", "command": "/x/no-poll-hook.sh"}]},
+        {"hooks": [{"type": "command", "command": "/x/opus-gate.sh"}]}]
+    p.write_text(json.dumps(d, indent=2) + "\n")
+    before = p.read_text()
+    assert harness.hooks_wired(_codex_harness()) is True
+    assert not [l for l in harness.sync(dry=True) if l.startswith("codex")]
+    harness.sync(dry=False)
+    assert p.read_text() == before
+
+
+def test_codex_missing_teyla_group_is_appended_without_moving_others(home):
+    harness.sync(dry=False)
+    p = _codex_file(home)
+    d = json.loads(p.read_text())
+    mine = {"matcher": "Bash", "hooks": [{"type": "command", "command": "/x/mine.sh"}]}
+    d["hooks"]["PreToolUse"] = [mine] + d["hooks"]["PreToolUse"] + [
+        {"hooks": [{"type": "command", "command": "/x/last.sh"}]}]
+    d["hooks"]["UserPromptSubmit"].pop(0)  # capture-correction gone
+    p.write_text(json.dumps(d))
+    assert harness.hooks_wired(_codex_harness()) is False
+    harness.sync(dry=False)
+    out = json.loads(p.read_text())["hooks"]
+    assert out["PreToolUse"] == d["hooks"]["PreToolUse"]
+    cmds = [g["hooks"][0]["command"] for g in out["UserPromptSubmit"]]
+    assert cmds[0].endswith("capture-intent.sh codex") and cmds[-1].endswith("capture-correction.sh")
+    assert harness.hooks_wired(_codex_harness()) is True
+
+
+def test_codex_changed_teyla_command_is_replaced_in_place(home):
+    harness.sync(dry=False)
+    p = _codex_file(home)
+    d = json.loads(p.read_text())
+    guard = d["hooks"]["PreToolUse"][0]
+    guard["hooks"][0]["command"] = str(home / ".teyla" / "hooks" / "machine-guard.sh") + " --old"
+    d["hooks"]["PreToolUse"] = [{"hooks": [{"type": "command", "command": "/x/first.sh"}]}, guard,
+                                {"hooks": [{"type": "command", "command": "/x/after.sh"}]}]
+    p.write_text(json.dumps(d))
+    harness.sync(dry=False)
+    out = json.loads(p.read_text())["hooks"]["PreToolUse"]
+    assert [g["hooks"][0]["command"] for g in out][0] == "/x/first.sh"
+    assert out[1]["hooks"][0]["command"] == str(home / ".teyla" / "hooks" / "machine-guard.sh")
+    assert out[1]["matcher"] == "Bash"
+    assert out[2]["hooks"][0]["command"] == "/x/after.sh" and len(out) == 3
+
+
+def test_cursor_foreign_entries_after_teyla_are_wired(home):
+    harness.sync(dry=False)
+    p = home / ".cursor" / "hooks.json"
+    d = json.loads(p.read_text())
+    d["hooks"]["sessionStart"].append({"command": "/x/late.sh"})
+    p.write_text(json.dumps(d, indent=2) + "\n")
+    before = p.read_text()
+    h = harness.harnesses()["cursor"]
+    assert harness.hooks_wired(h) is True
+    harness.sync(dry=False)
+    assert p.read_text() == before

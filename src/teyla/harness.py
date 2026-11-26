@@ -235,9 +235,8 @@ def _cursor_hooks(existing: dict | None) -> dict:
     hooks = dict(d.get("hooks") or {})
     for event, scripts in (("sessionStart", ("session-start.sh",)),
                            ("beforeSubmitPrompt", ("capture-correction.sh", "capture-intent.sh"))):
-        entries = [e for e in (hooks.get(event) or []) if not str(e.get("command", "")).startswith(str(HOOKS_DIR) + "/")]
-        entries += [{"command": str(HOOKS_DIR / script), "type": "command", "timeout": 5} for script in scripts]
-        hooks[event] = entries
+        wanted = [{"command": str(HOOKS_DIR / script), "type": "command", "timeout": 5} for script in scripts]
+        hooks[event] = _ensure_flat(hooks.get(event) or [], wanted)
     d["hooks"] = hooks
     return d
 
@@ -277,6 +276,78 @@ def _land_check_on() -> bool:
         return False
 
 
+def _script_of(command) -> str:
+    """The script a Teyla command runs (`<HOOKS_DIR>/x.sh --flag` -> `x.sh`): a handler's identity."""
+    return str(command).split(" ", 1)[0].rsplit("/", 1)[-1]
+
+
+def _ensure_flat(entries: list, wanted: list) -> list:
+    """Cursor's flat entries: every wanted entry present, in any position. A Teyla entry whose
+    command or timeout changed is replaced in place; a missing one is appended; Teyla entries that
+    are no longer wanted go; every other entry keeps its place."""
+    by_script = {_script_of(w["command"]): w for w in wanted}
+    out, seen = [], set()
+    for e in entries:
+        cmd = str(e.get("command", "")) if isinstance(e, dict) else ""
+        if not cmd.startswith(str(HOOKS_DIR) + "/"):
+            out.append(e)
+            continue
+        key = _script_of(cmd)
+        if key in by_script and key not in seen:
+            seen.add(key)
+            out.append(e if e == by_script[key] else by_script[key])
+    out += [w for k, w in by_script.items() if k not in seen]
+    return out
+
+
+def _ensure_groups(groups, wanted: list) -> list:
+    """Codex's groups: every wanted group present with the right matcher and command, in any
+    position (Codex trust is keyed by position, so an order change un-trusts hooks). A Teyla
+    handler that changed is replaced in place; a missing one is appended; stale or duplicate Teyla
+    handlers go; the user's groups and handlers are never moved."""
+    by_script = {_script_of(w["hooks"][0]["command"]): w for w in wanted}
+    out, seen = [], set()
+    for g in groups or []:
+        if not _is_teyla_group(g):
+            out.append(g)
+            continue
+        new_hooks, changed = [], False
+        pure = all(_is_teyla_handler(h) for h in g["hooks"]) and len(g["hooks"]) == 1
+        for h in g["hooks"]:
+            if not _is_teyla_handler(h):
+                new_hooks.append(h)
+                continue
+            key = _script_of(h["command"])
+            w = by_script.get(key)
+            if w is None or key in seen:
+                changed = True  # stale or duplicate
+                continue
+            if h == w["hooks"][0] and g.get("matcher") == w.get("matcher"):
+                seen.add(key)
+                new_hooks.append(h)
+            elif pure:
+                seen.add(key)
+                changed = True
+                new_hooks.append(w["hooks"][0])
+            else:  # shares a group with the user's handler: leave that group, append ours as its own
+                changed = True
+        if not changed:
+            out.append(g)
+            continue
+        if not new_hooks:
+            continue
+        ng = {**g, "hooks": new_hooks}
+        mine = [h for h in new_hooks if _is_teyla_handler(h)]
+        if len(mine) == len(new_hooks) and len(mine) == 1:  # a pure Teyla group takes the wanted matcher
+            w = by_script[_script_of(mine[0]["command"])]
+            ng.pop("matcher", None)
+            if "matcher" in w:
+                ng["matcher"] = w["matcher"]
+        out.append(ng)
+    out += [w for k, w in by_script.items() if k not in seen]
+    return out
+
+
 def _codex_hooks(existing: dict | None, land_check: bool | None = None) -> dict:
     """~/.codex/hooks.json with Teyla's SessionStart and UserPromptSubmit groups present, every other
     group kept. Codex's shape is Claude Code's (`{hooks: {Event: [{matcher?, hooks: [{type, command,
@@ -287,27 +358,27 @@ def _codex_hooks(existing: dict | None, land_check: bool | None = None) -> dict:
     d = dict(existing or {})
     d.setdefault("description", CODEX_DESCRIPTION)
     hooks = dict(d.get("hooks") or {})
-    for event, commands in (("SessionStart", (f"{HOOKS_DIR / 'session-start.sh'} --codex",)),
-                            ("UserPromptSubmit", (str(HOOKS_DIR / "capture-correction.sh"),
-                                                  f"{HOOKS_DIR / 'capture-intent.sh'} codex"))):
-        groups = _without_teyla(hooks.get(event))
-        groups += [{"hooks": [{"type": "command", "command": c, "timeout": 5}]} for c in commands]
-        hooks[event] = groups
-    # The machine guard: PreToolUse on shell calls (`codex features list`: hooks stable; the
-    # documented matcher name for a shell call is `Bash`, input `tool_input.command`). A user's
-    # own PreToolUse groups stay; ours is appended after them.
-    guard = _without_teyla(hooks.get("PreToolUse"))
-    guard.append({"matcher": "Bash", "hooks": [{"type": "command", "command": str(HOOKS_DIR / "machine-guard.sh"), "timeout": 15}]})
-    hooks["PreToolUse"] = guard
-    land = _land_check_on() if land_check is None else land_check
-    before = hooks.get("Stop")
-    stop = _without_teyla(before)
-    if land:
-        stop.append({"hooks": [{"type": "command", "command": f"{HOOKS_DIR / 'land-check.sh'} --codex", "timeout": 10}]})
-    if stop:
-        hooks["Stop"] = stop
-    elif before:  # only Teyla's handler was there: drop the event, not a user's empty list
-        del hooks["Stop"]
+    def group(c, matcher=None, timeout=5):
+        g = {"hooks": [{"type": "command", "command": c, "timeout": timeout}]}
+        return {"matcher": matcher, **g} if matcher else g
+
+    wanted = {
+        "SessionStart": [group(f"{HOOKS_DIR / 'session-start.sh'} --codex")],
+        "UserPromptSubmit": [group(str(HOOKS_DIR / "capture-correction.sh")),
+                             group(f"{HOOKS_DIR / 'capture-intent.sh'} codex")],
+        # The machine guard: PreToolUse on shell calls (`codex features list`: hooks stable; the
+        # documented matcher name for a shell call is `Bash`, input `tool_input.command`).
+        "PreToolUse": [group(str(HOOKS_DIR / "machine-guard.sh"), "Bash", 15)],
+        "Stop": [group(f"{HOOKS_DIR / 'land-check.sh'} --codex", timeout=10)] if (
+            _land_check_on() if land_check is None else land_check) else [],
+    }
+    for event, groups in wanted.items():
+        before = hooks.get(event)
+        new = _ensure_groups(before, groups)
+        if new:
+            hooks[event] = new
+        elif before:  # only Teyla's handler was there: drop the event, not a user's empty list
+            del hooks[event]
     d["hooks"] = hooks
     return d
 
