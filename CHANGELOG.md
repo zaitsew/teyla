@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Tests: the web test of offer O6 no longer clones Teyla from github.com. The clone took longer than the test's client waits, so the gate failed, and the abandoned request thread printed into the next test and wrote a change and a diagnosis into the real `~/.teyla`. A test that reaches a remote `git clone` now fails, and the web fixture joins its server's threads. The session-start hook's sync test waits for the line it checks, not for whichever background command writes first.
+
 ## 0.61.1 — 2026-11-24
 
 - `teyla policy sync`: the note under the compacted merge-approved list also names the file the list header points to, for owners who keep the verbatim provenance outside CLAUDE.md.
