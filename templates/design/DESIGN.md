@@ -34,7 +34,12 @@ One word per concept, never rotated. Each language is written from the brief, no
 ## Voice
 UI copy only; social and marketing text follows `VOICE.md`. The product sounds {{three
 adjectives}}. Address: {{you or we; formal or informal, per language}}. Limits and Apple's
-writing rules: Part 3 of the standard.
+writing rules: Part 3 of the standard. Write these five, one line each:
+1. Labels name things and states; who speaks in sentences ({{the assistant, the app}}) and how long.
+2. The assistant proposes, never claims ("Leave at 08:20?", not "I moved your train"); after an action, what changed and Undo (R23).
+3. Errors: what failed and one way out, without "we" (R12). Empty states: what is not here yet and one action (R13).
+4. Humour: {{where a wink is allowed, at most once per screen; never in errors, money or safety}}.
+5. Never: {{urgency, praise for routine acts, emoji in UI, the product's banned words}}.
 
 ## Screens
 One file per screen in `design/screens/*.yaml`: job, primary action, states, string keys.

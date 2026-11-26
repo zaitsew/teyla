@@ -7,7 +7,7 @@ makes a button fail with a reason a person can read and override, never a silent
     OOPS      an interjection that makes an error a joke (Apple: an error is not a joke)
     PLEASE    "please" (standard R11)
     WE        first person plural in an error (standard R12; Apple: the system did it, not a "we")
-    YOUR      a possessive before a noun at the start of a label (standard R14)
+    YOUR      a possessive before a noun at the start of a label (standard R11)
     GENERIC   button labels that name no action (standard R10)
     VERBS     the first word of a button: a verb (Apple: a verb on every button)
 """

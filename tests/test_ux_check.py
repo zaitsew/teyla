@@ -277,6 +277,40 @@ def test_crowded_is_a_warning_never_a_fix(tmp_path):
         assert [f["severity"] for f in r["findings"]] == ["WARN"]
 
 
+def test_motion_counts_hand_written_curves(tmp_path):
+    body = """
+        withAnimation(.snappy) { x = 1 }
+        withAnimation(.easeInOut(duration: 0.3)) { x = 2 }
+        Text("a").animation(.spring(response: 0.4), value: x)
+        Text("a").animation(.linear, value: x)
+        withAnimation(Motion.select) { x = 3 }
+        Text("a").animation(nil, value: x)
+        Text("a").animation(Motion.reveal, value: x)
+    """
+    assert counts(tmp_path, {"S/A.swift": swift_view(body)})["motion"] == 4
+
+
+def test_motion_counts_a_curve_on_the_next_line(tmp_path):
+    body = """
+        Text("a").animation(
+            .spring(), value: x)
+        withAnimation(
+            .easeOut(duration: 0.2)) { x = 1 }
+    """
+    assert counts(tmp_path, {"S/A.swift": swift_view(body)})["motion"] == 2
+
+
+def test_motion_is_a_warning_never_a_fix(tmp_path):
+    def view(n):
+        return swift_view("\n".join(["withAnimation(.bouncy) { }"] * n))
+    few = ux_check.check_repo(make(tmp_path, {"S/A.swift": view(9)}, name="few"))
+    assert "motion" not in [f["check"] for f in few["findings"]]
+    many = ux_check.check_repo(make(tmp_path, {f"S/V{i}.swift": view(40) for i in range(5)}, name="many"))
+    f = [x for x in many["findings"] if x["check"] == "motion"]
+    assert [x["severity"] for x in f] == ["WARN"] and many["verdict"] == "WARN"
+    assert "motion" in ux_check.render([many])
+
+
 def test_copy_thresholds(tmp_path):
     def rep(n, name):
         body = "\n".join(['Text("Please wait")'] * n)
