@@ -65,7 +65,7 @@ WORKER = ["xcodebuild -scheme App test", "cd app && swift build", "xcrun simctl 
           "./check.sh", "git commit -m x", "git -C /w push origin b", "git merge main", "git rebase main",
           "git cherry-pick abc", "gh pr create --title t", "gh pr merge 5 --merge", "~/ops/bin/testflight release x",
           "~/ops/bin/codex-review --context x", "claude-review", "bash -lc 'git push'", "FOO=1 git commit -m x",
-          "echo hi && git commit -m x"]
+          "echo hi && git commit -m x", "npm --prefix web run build", "pnpm -C web test", "yarn --cwd web build"]
 READONLY = ["git status", "git log --oneline", "git diff", "git show HEAD", "gh pr view 5", "gh pr list", "cat a.txt",
             "rg foo", "ls -la", "teyla load", "xcodebuild -list", "xcrun simctl list", "git commit-graph x".replace("x", ""),
             "echo git commit", "git log --grep=commit", "npm install", "./gradlew --stop", "gh issue list"]
@@ -163,6 +163,8 @@ def test_the_override_is_logged_and_allows(tmp_path, env):
     assert rows(env)[-1][1:] == ["override", "codex", ASTRA, "git push", "release hotfix"]
     assert og.decide(codex(ASTRA, 'TEYLA_ORCH_OK="one-off" git commit -m x'), env) is None
     assert rows(env)[-1][1] == "override" and rows(env)[-1][5] == "one-off"
+    assert og.decide(codex(ASTRA, "bash -lc 'TEYLA_ORCH_OK=\"hotfix\" git push'"), env) is None
+    assert rows(env)[-1][5] == "hotfix"
     assert all("-m" not in r[4] for r in rows(env))  # the head holds no arguments
 
 

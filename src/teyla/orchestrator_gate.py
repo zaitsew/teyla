@@ -45,6 +45,7 @@ MODES = ("refuse", "warn", "off")
 DELEGATE = ("Delegate this to a worker: Claude -> Agent(subagent_type: builder, model: sonnet); "
             "Codex -> spawn_agent(agent_type: volume).")
 NPM_RUNNERS = {"npm", "pnpm", "yarn", "bun"}
+NPM_VALUE_OPTS = {"--prefix", "-C", "--dir", "--cwd", "--workspace", "-w", "--filter", "-F", "--project"}
 XCODE_READONLY = {"-list", "-showsdks", "-version", "-showbuildsettings", "-showdestinations", "-help", "-usage"}
 SIMCTL_WORK = {"boot", "install", "launch", "create", "clone", "bootstatus"}
 GIT_WORK = {"commit", "push", "merge", "rebase", "cherry-pick"}
@@ -210,6 +211,16 @@ def _name(w: str) -> str:
     return os.path.basename(w)
 
 
+_NESTED_REASON: list[str] = []
+
+
+def _nested(result: tuple[str, str]) -> str:
+    """The head of a script run by `bash -c` / `eval`; its TEYLA_ORCH_OK reason is kept for classify()."""
+    if result[0] and result[1]:
+        _NESTED_REASON.append(result[1])
+    return result[0]
+
+
 def worker_head(words: list[str], depth: int = 0) -> str:
     """"git commit" style head when `words` (already past wrappers) starts a worker command, else ""."""
     if not words or depth > 4:
@@ -232,9 +243,9 @@ def worker_head(words: list[str], depth: int = 0) -> str:
     if exe == "gradlew" or exe == "gradle":
         return exe if any(not a.startswith("-") for a in args) else ""
     if exe in NPM_RUNNERS:
-        sub, rest = _first_arg(args, set())
+        sub, rest = _first_arg(args, NPM_VALUE_OPTS)
         if sub in ("run", "run-script") and rest:
-            sub = rest[0]
+            sub = _first_arg(rest, NPM_VALUE_OPTS)[0]
         return f"{exe} {sub}" if re.match(r"(build|test)\b", sub) else ""
     if exe in ("pytest", "py.test"):
         return "pytest"
@@ -263,10 +274,10 @@ def worker_head(words: list[str], depth: int = 0) -> str:
     if exe in ("sh", "bash", "zsh", "dash", "ksh"):
         for i, a in enumerate(args):
             if a.startswith("-") and not a.startswith("--") and "c" in a[1:] and i + 1 < len(args):
-                return classify(args[i + 1], depth + 1)[0]
+                return _nested(classify(args[i + 1], depth + 1))
         return ""
     if exe == "eval":
-        return classify(" ".join(args), depth + 1)[0]
+        return _nested(classify(" ".join(args), depth + 1))
     return ""
 
 
@@ -284,6 +295,9 @@ def classify(command: str, depth: int = 0) -> tuple[str, str]:
         else:
             head = worker_head(words[i:], depth)
         if head:
+            if _NESTED_REASON:
+                reason = _NESTED_REASON.pop()
+                _NESTED_REASON.clear()
             for a in assigns:
                 if a.startswith("TEYLA_ORCH_OK="):
                     reason = a.split("=", 1)[1].strip("'\"") or "override"
