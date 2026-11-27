@@ -32,6 +32,8 @@ import shutil
 import subprocess
 import sys
 
+from . import hook_paths
+
 SCAN_TIMEOUT = 25            # seconds; the hook's own timeout in hooks.json is longer, so this fires first
 MAX_FILE = 5_000_000         # a body file larger than this is not scanned, so it is refused
 MAX_SHOWN = 20
@@ -1528,7 +1530,13 @@ def decide(payload: dict, environ) -> list[str] | None:
     if not isinstance(ti, dict):
         return None
     env = Env(str(payload.get("cwd") or ""), environ)
-    path = ti.get("file_path") or ti.get("notebook_path")
+    if hook_paths.is_patch_call(payload):     # Codex's edit tool: the patch text is not a shell command
+        for p in hook_paths.edit_paths(payload):
+            lines = decide_path(p, env)
+            if lines:
+                return lines
+        return None
+    path = ti.get("file_path") or ti.get("notebook_path") or ti.get("path")
     if isinstance(path, str) and (payload.get("tool_name") in READ_TOOLS or "command" not in ti):
         return decide_path(path, env)
     command = command_of(ti)
