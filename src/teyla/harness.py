@@ -72,7 +72,8 @@ from . import __version__, plugin_dir
 HOME = pathlib.Path.home()
 HOOKS_DIR = HOME / ".teyla" / "hooks"
 HOOK_SCRIPTS = ("session-start.sh", "capture-correction.sh", "capture-intent.sh", "design-hint.sh", "land-check.sh",
-                "machine-guard.sh", "orchestrator-gate.sh", "pr-size-gate.sh")
+                "machine-guard.sh", "orchestrator-gate.sh", "pr-size-gate.sh", "pre-tool-use.sh", "leak-guard.sh",
+                "platform-gate.sh")
 PLUGIN_SKILLS = ("harvest", "adoption-review", "wiki-pass", "review", "tidy", "taste")
 CLI_SKILLS = {
     "teyla-rule": (
@@ -380,7 +381,15 @@ def _codex_hooks(existing: dict | None, land_check: bool | None = None) -> dict:
                        # The orchestrator gate: the same matcher; Codex sends `model` in the payload.
                        group(str(HOOKS_DIR / "orchestrator-gate.sh"), "Bash", 10),
                        # The PR size gate: `gh pr create` / `gh pr merge` over the size limits.
-                       group(str(HOOKS_DIR / "pr-size-gate.sh"), "Bash", 10)],
+                       group(str(HOOKS_DIR / "pr-size-gate.sh"), "Bash", 10),
+                       # The kill switch and run grants: every tool call, as in Claude's plugin.
+                       group(str(HOOKS_DIR / "pre-tool-use.sh"), None, 10),
+                       # The credential and publication guard. Codex has no Read tool (reads go through the
+                       # shell), and its one edit tool is `apply_patch` (`Edit` and `Write` alias to it): the
+                       # patch's files are checked as paths (`teyla.hook_paths`).
+                       group(str(HOOKS_DIR / "leak-guard.sh"), "Bash|apply_patch", 30),
+                       # The parity gate on edits (POLICY §14), over the files of the patch.
+                       group(str(HOOKS_DIR / "platform-gate.sh"), "apply_patch", 10)],
         "Stop": [group(f"{HOOKS_DIR / 'land-check.sh'} --codex", timeout=10)] if (
             _land_check_on() if land_check is None else land_check) else [],
     }
@@ -403,7 +412,12 @@ def _grok_hooks() -> dict:
                              {"hooks": [{"type": "command", "command": str(HOOKS_DIR / "design-hint.sh"), "timeout": 5}]}],
         # Grok's `Bash` matcher aliases its run_terminal_command; a PreToolUse exit 2 denies, and
         # `--grok` also prints the full reason as JSON because Grok keeps only the first stderr line.
-        "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": f"{HOOKS_DIR / 'machine-guard.sh'} --grok", "timeout": 15}]}],
+        "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": f"{HOOKS_DIR / 'machine-guard.sh'} --grok", "timeout": 15}]},
+                       {"hooks": [{"type": "command", "command": str(HOOKS_DIR / "pre-tool-use.sh"), "timeout": 10}]},
+                       # Grok aliases Read -> read_file and Edit|Write|MultiEdit -> search_replace/write; its file
+                       # tools name the file in `path`, which both guards read.
+                       {"matcher": "Bash|Read|Edit|Write|MultiEdit", "hooks": [{"type": "command", "command": f"{HOOKS_DIR / 'leak-guard.sh'} --grok", "timeout": 30}]},
+                       {"matcher": "Edit|Write|MultiEdit|NotebookEdit", "hooks": [{"type": "command", "command": str(HOOKS_DIR / "platform-gate.sh"), "timeout": 10}]}],
     }}
 
 
@@ -505,10 +519,11 @@ def _sync_hooks(h: Harness, dry: bool) -> list[str]:
         if not dry:
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(json.dumps(want, indent=2) + "\n")
-        events = "SessionStart + UserPromptSubmit" + (" + Stop (land check)" if "Stop" in (want.get("hooks") or {})
+        events = "SessionStart + UserPromptSubmit + PreToolUse (machine, orchestrator, kill switch, leak and platform guards)" + (" + Stop (land check)" if "Stop" in (want.get("hooks") or {})
                                                          and any(_is_teyla_group(g) for g in want["hooks"]["Stop"]) else "")
         return [f"codex: {'would write' if dry else 'wrote'} {events} into {p} — "
-                "open Codex once and trust them (\"Hooks need review\" → Trust, or /hooks); until then Codex skips them"]
+                "open Codex once and trust them (\"Hooks need review\" → Trust, or /hooks); a new or changed hook needs this again, "
+                "and until then Codex skips it"]
     if h.hooks_kind == "grok":
         want = json.dumps(_grok_hooks(), indent=2) + "\n"
         if p.exists() and p.read_text() == want:

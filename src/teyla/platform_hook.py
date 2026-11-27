@@ -1,7 +1,7 @@
 """`teyla platform hook` — refuse the first edit of a closed secondary platform's file (POLICY §14).
 
 The push check fires after the tokens are spent. This runs as a PreToolUse hook on Edit, Write, MultiEdit and
-NotebookEdit, reads the tool call as JSON on stdin and decides before the first write:
+NotebookEdit, reads the tool call as JSON on stdin (Claude's file_path, or the files of a Codex apply_patch) and decides before the first write:
 
     file_path -> git root of that file -> teyla.toml + docs/parity.toml in that worktree
               -> platforms_of(path) -> a non-primary platform whose gate is closed  => exit 2
@@ -21,7 +21,7 @@ import os
 import pathlib
 import sys
 
-from . import parity, platform_gate
+from . import hook_paths, parity, platform_gate
 
 MESSAGE = ("platform gate: {plat} is closed in {product}: {reason}. Primary first (POLICY §14). "
            "Build it on {primary}; the owner opens a train with his feedback (`teyla parity status`).")
@@ -35,12 +35,19 @@ def _root_of(path: pathlib.Path) -> pathlib.Path | None:
 
 
 def decide(payload: dict, today: datetime.date | None = None) -> tuple[int, str]:
-    """`(exit code, stderr text)` for one tool call. Pure apart from reading the repo and the label log."""
-    ti = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
-    raw = ti.get("file_path") or ti.get("notebook_path") or ti.get("path")
-    if not raw:
-        return 0, ""
-    path = pathlib.Path(str(raw))
+    """`(exit code, stderr text)` for one tool call: the first path of the call that is refused decides.
+    Pure apart from reading the repo and the label log. Codex's apply_patch names several files."""
+    notes = ""
+    for raw in hook_paths.edit_paths(payload):
+        code, text = _decide_path(str(raw), payload, today)
+        if code:
+            return code, text
+        notes += text
+    return 0, notes
+
+
+def _decide_path(raw: str, payload: dict, today: datetime.date | None) -> tuple[int, str]:
+    path = pathlib.Path(raw)
     if not path.is_absolute():
         path = pathlib.Path(str(payload.get("cwd") or ".")) / path
     path = pathlib.Path(os.path.abspath(path))

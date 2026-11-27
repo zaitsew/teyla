@@ -8,6 +8,10 @@
 # the common case free. It takes the file path from the JSON with builtins, walks up to the git root of that
 # file, and starts Python only when that root holds docs/parity.toml. No ledger, no process.
 #
+# Codex's edit tool is `apply_patch`: the payload has no file_path, the patch text (with every file it touches)
+# is in tool_input.command. That case goes straight to Python (`teyla.hook_paths` parses the patch) and the
+# ledger check there costs only the interpreter start. Grok names its file in `path`.
+#
 # Fail open on purpose: no python with teyla, a crash, an odd path. A gate that breaks must not break the call.
 # TEYLA_PYTHON names the python to use.
 
@@ -17,18 +21,28 @@ while IFS= read -r line || [ -n "$line" ]; do
 "
 done
 
-path=""
-for key in file_path notebook_path; do
-    after=${payload#*\"$key\"}
-    if [ "$after" != "$payload" ]; then
-        v=${after#*:}
-        v=${v#*\"}
-        path=${v%%\"*}
-        break
-    fi
-done
-[ -n "$path" ] || exit 0
+patch=0
+case "$payload" in
+    *'"tool_name"'*apply_patch*|*apply_patch*'"tool_name"'*) patch=1 ;;
+esac
 
+path=""
+if [ "$patch" = 0 ]; then
+    for key in file_path notebook_path path; do
+        after=${payload#*\"$key\"}
+        if [ "$after" != "$payload" ]; then
+            v=${after#*:}
+            v=${v#*\"}
+            path=${v%%\"*}
+            break
+        fi
+    done
+    [ -n "$path" ] || exit 0
+fi
+
+if [ "$patch" = 1 ]; then
+    root=x          # the files are the patch's, found in Python
+else
 case "$path" in
     /*) d=$path ;;
     *)
@@ -45,6 +59,7 @@ while [ -n "$d" ] && [ "$d" != "/" ]; do
     if [ -e "$d/.git" ]; then root=$d; break; fi
 done
 [ -n "$root" ] && [ -f "$root/docs/parity.toml" ] && [ -f "$root/teyla.toml" ] || exit 0
+fi
 
 teyla_python() {
     t=$(command -v teyla) || t="$HOME/.local/bin/teyla"     # a uv tool install is not on a GUI app's PATH
