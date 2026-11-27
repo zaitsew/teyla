@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **`teyla ux check --diff [BASE]` gives a UX PR a pass or fail.** The repo-wide check is debt (a repo with 1,331 spacing literals is FIX before and after a PR, and exits 0 without `--strict`). Diff mode reads `git diff` against the merge-base with `origin/HEAD` and lists only added lines as `file:line` with the rule, then one repo-debt line. A font, colour or spacing literal typed into a view exits 1; a hand-written animation curve warns. Without the flag, a branch that differs from its base gets a one-line hint. STANDARD.md and docs/UX.md tell agents to run `--diff` before a UX PR.
 - Tests: the web test of offer O6 no longer clones Teyla from github.com. The clone took longer than the test's client waits, so the gate failed, and the abandoned request thread printed into the next test and wrote a change and a diagnosis into the real `~/.teyla`. A test that reaches a remote `git clone` now fails, and the web fixture joins its server's threads. The session-start hook's sync test waits for the line it checks, not for whichever background command writes first.
 
 ## 0.61.1 — 2026-11-24

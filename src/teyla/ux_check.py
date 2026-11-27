@@ -1,8 +1,9 @@
 """`teyla ux check` — does a product's UI code follow the shared UX standard (templates/design/STANDARD.md)?
 
     teyla ux check [repo...] [--all] [--json] [--strict]
+    teyla ux check [repo...] --diff [BASE] [--json]     # only what this change adds; exit 1 on a violation (ux_check_diff.py)
 
-A static audit of view code. It reads files only: no network, no writes, no git history, and it
+A static audit of view code. It reads files only: no network, no writes, no git history (only `--diff` runs local git), and it
 runs in a second or two on a large app. It cannot judge a design. It counts the mechanical
 symptoms of one: values typed into views instead of taken from the product's tokens, screens with
 too many tap targets, and copy that breaks the writing rules. Repos are chosen the same way as
@@ -763,12 +764,28 @@ def cmd_ux(args) -> int:
     except FileNotFoundError as e:
         print(f"teyla ux check: {e}", file=sys.stderr)
         return 2
+    if getattr(args, "diff", None) is not None:
+        from . import ux_check_diff
+        return ux_check_diff.run(repos, args.diff or None, args.json)
     reports = [check_repo(r) for r in repos]
     if args.json:
         print(json.dumps({"repos": reports, "totals": totals(reports)}, indent=1))
     else:
         print(render(reports))
+        if len(repos) == 1:
+            from . import ux_check_diff
+            h = ux_check_diff.hint(repos[0])
+            if h:
+                print(h)
     return 1 if args.strict and totals(reports)[FIX] else 0
+
+
+DIFF_HELP = (
+    "check: report only findings on lines ADDED since BASE (default: merge-base with origin/HEAD, "
+    "else origin/main), plus new files, each as file:line and rule; repo-wide totals shrink to one "
+    "debt line. Exit 1 when the diff adds a blocking violation (font, colour or spacing literal "
+    "typed into a view outside token files), 0 otherwise; motion curves only warn; 2 on a bad base. "
+    "Put the repo before --diff when you also pass BASE: `ux check app --diff origin/main`")
 
 
 def register(sp):
@@ -778,6 +795,7 @@ def register(sp):
     q.add_argument("repos", nargs="*", help="check: repo names under code_root or paths (default: the git root of the current directory); judge: the two pictures, A and B; registry: `check` then the repo; atlas: the repo")
     q.add_argument("--all", action="store_true", help="every git repo under code_root")
     q.add_argument("--json", action="store_true")
+    q.add_argument("--diff", nargs="?", const="", default=None, metavar="BASE", help=DIFF_HELP)
     q.add_argument("--strict", action="store_true", help="exit 1 when any repo has a FIX")
     from . import ux_shots
     ux_shots.add_arguments(q)
