@@ -244,7 +244,7 @@ def test_other_commands_are_untouched(repo, env, tmp_path, cmd):
     assert not log.exists() and rows(env) == []
 
 
-def test_a_gh_failure_allows_and_main_exits_zero(repo, env, tmp_path, monkeypatch, capsys):
+def test_a_gh_failure_allows_logs_unsized_and_main_exits_zero(repo, env, tmp_path, monkeypatch, capsys):
     bin_ = tmp_path / "bin"
     bin_.mkdir()
     (bin_ / "gh").write_text("#!/bin/sh\nexit 1\n")
@@ -255,17 +255,122 @@ def test_a_gh_failure_allows_and_main_exits_zero(repo, env, tmp_path, monkeypatc
     import io
     monkeypatch.setattr("sys.stdin", type("S", (), {"buffer": io.BytesIO(json.dumps(claude(repo, "gh pr merge 3")).encode())})())
     assert g.main() == 0
-    assert "skipped" in capsys.readouterr().err
+    assert "not sized" in capsys.readouterr().err
+    [row] = rows(env)
+    assert row[2:4] == ["widget", "merge"] and row[-1].startswith("unsized: ") and "exited 1" in row[-1]
 
 
-def test_a_repo_without_a_base_allows(tmp_path, env, monkeypatch):
+def test_a_repo_without_a_base_allows_and_logs_unsized(tmp_path, env):
     r = tmp_path / "bare"
     r.mkdir()
     git(r, "init", "-q", "-b", "trunk")
-    for k, v in env.items():
-        monkeypatch.setenv(k, v)
-    with pytest.raises(RuntimeError):
-        g.decide(claude(r, "gh pr create --fill"), env)  # decide raises; main() turns it into an allow
+    assert g.decide(claude(r, "gh pr create --fill"), env) is None
+    [row] = rows(env)
+    assert row[2:4] == ["bare", "create"] and row[-1] == "unsized: RuntimeError: no base branch"
+
+
+# --- fail-open gaps -------------------------------------------------------------------------------------------
+
+def test_head_option_sizes_the_named_branch_not_the_current_one(repo, env):
+    add(repo, {"src/small.py": 10})
+    git(repo, "checkout", "-qb", "other", "main")
+    add(repo, {"src/big.py": 900})
+    git(repo, "checkout", "-q", "feature")  # HEAD is the small branch
+    assert decide(claude(repo, "gh pr create --fill"), env) is None
+    assert decide(claude(repo, "gh pr create --head other --fill"), env)
+    assert decide(claude(repo, "gh pr create -H other --fill"), env)
+    assert decide(claude(repo, "gh pr create --head=someone:other --fill"), env)
+    git(repo, "checkout", "-q", "other")  # HEAD is the big branch, the named head is the small one
+    assert decide(claude(repo, "gh pr create --head feature --fill"), env) is None
+
+
+def test_a_remote_only_head_uses_origin(repo, env):
+    add(repo, {"src/big.py": 900})
+    git(repo, "update-ref", "refs/remotes/origin/pushed", "HEAD")
+    git(repo, "checkout", "-q", "main")
+    assert decide(claude(repo, "gh pr create --head pushed --fill"), env)
+    assert decide(claude(repo, "gh pr create --head fork:pushed --fill"), env)
+
+
+def test_a_missing_head_allows_and_logs_unsized(repo, env):
+    add(repo, {"src/big.py": 900})
+    assert decide(claude(repo, "gh pr create --head nowhere --fill"), env) is None
+    assert rows(env)[0][-1] == "unsized: RuntimeError: head nowhere not found locally or on origin"
+
+
+def test_a_base_with_a_slash_resolves_to_the_remote_ref(repo, env):
+    add(repo, {"src/a.py": 900})
+    git(repo, "update-ref", "refs/remotes/origin/release/v1", "main")
+    assert decide(claude(repo, "gh pr create --base release/v1 --fill"), env)
+    assert decide(claude(repo, "gh pr create -B origin/main --fill"), env)
+    git(repo, "branch", "hotfix/x", "HEAD")  # a local ref with a slash
+    assert decide(claude(repo, "gh pr create --base hotfix/x --fill"), env) is None
+    assert [r[-1] for r in rows(env)] == ["refused", "refused"]
+
+
+def test_an_unknown_base_allows_and_logs_unsized(repo, env):
+    add(repo, {"src/a.py": 900})
+    assert decide(claude(repo, "gh pr create --base release/none --fill"), env) is None
+    assert rows(env)[0][-1] == "unsized: RuntimeError: base release/none not found"
+
+
+@pytest.mark.parametrize("cmd, reason", [
+    ("gh pr create --title x --body 'Moves it.\n\nSize-OK: one idea'", "one idea"),
+    ('gh pr create --title x --body "Size-OK: one idea"', "one idea"),
+    ("gh pr create --title x --body='Size-OK: one idea'", "one idea"),
+    ("gh pr create --title x --body \"$(cat <<'EOF'\nsummary\n\nSize-OK: one idea\nEOF\n)\"", "one idea"),
+    ("gh pr create --title x --body-file - <<'EOF'\nsummary\n\nSize-OK: one idea\nEOF\n", "one idea"),
+])
+def test_size_ok_is_read_from_the_body_value_without_quotes(repo, env, cmd, reason):
+    add(repo, {"src/a.py": 900})
+    assert decide(claude(repo, cmd), env) is None
+    assert rows(env)[-1][-1] == reason
+
+
+def test_size_ok_in_a_body_file_loses_its_quotes(repo, env, tmp_path):
+    add(repo, {"src/a.py": 900})
+    (tmp_path / "b.md").write_text("summary\nSize-OK: vendored data'\n")
+    assert decide(claude(repo, f"gh pr create --body-file {tmp_path}/b.md"), env) is None
+    assert rows(env)[-1][-1] == "vendored data"
+
+
+def test_size_ok_outside_the_body_does_not_override(repo, env):
+    add(repo, {"src/a.py": 900})
+    assert decide(claude(repo, "echo 'Size-OK: sneaky' && gh pr create --title t --body plain"), env)
+    assert decide(claude(repo, "gh pr create --title 'Size-OK: sneaky' --body plain"), env)
+
+
+def test_merge_by_url_outside_a_checkout(tmp_path, env):
+    nowhere = tmp_path / "plain"
+    nowhere.mkdir()
+    log = stub_gh(tmp_path, env, {"src/a.py": 900})
+    url = "https://github.com/owner/app/pull/7"
+    assert decide(claude(nowhere, f"gh pr merge {url} --merge"), env)
+    assert f"pr view {url} --json" in log.read_text() and "-R" not in log.read_text()
+    assert rows(env)[0][2:4] == ["owner/app", url] and rows(env)[0][-1] == "refused"
+
+
+def test_merge_with_repo_flag_outside_a_checkout(tmp_path, env):
+    nowhere = tmp_path / "plain"
+    nowhere.mkdir()
+    log = stub_gh(tmp_path, env, {"src/a.py": 900})
+    assert decide(claude(nowhere, "gh pr merge 9 -R owner/app --merge"), env)
+    assert "pr view 9 -R owner/app" in log.read_text() and rows(env)[0][2] == "owner/app"
+    assert decide(claude(nowhere, "gh pr merge --repo owner/other 9"), env)
+    assert rows(env)[1][2] == "owner/other"
+
+
+def test_merge_outside_a_checkout_without_a_repo_still_sizes_and_labels_unknown(tmp_path, env):
+    nowhere = tmp_path / "plain"
+    nowhere.mkdir()
+    stub_gh(tmp_path, env, {"src/a.py": 900})
+    assert decide(claude(nowhere, "gh pr merge 9"), env)
+    assert rows(env)[0][2] == "unknown"
+
+
+def test_monitor_line_counts_unsized(env):
+    g.log_row("codex", "r", "create", 0, 0, "unsized: RuntimeError: no base branch", env)
+    assert g.monitor_line(environ=env) == "PR size gate, last 7 days: 1 unsized.\n"
 
 
 def test_monitor_line_counts_each_kind(env):
