@@ -87,6 +87,7 @@ class AgentCall:
     model: str | None  # None = inherited the parent model
     kind: str | None
     desc: str | None
+    role: str | None = None  # Codex spawn_agent `agent_type` (volume, scout): names a model through ~/.codex/agents/<role>.toml
 
 
 def local_day(ts: str | None) -> str:
@@ -117,6 +118,11 @@ class Session:
     cwd: str | None = None
     title: str | None = None
     sidechain: bool = False
+    # A spawned Codex sub-agent: the parent rollout's id, and the role and nickname the parent gave it.
+    # sid is always the rollout's own id; a top-level session has all three empty.
+    parent_sid: str | None = None
+    agent_role: str | None = None
+    agent_nickname: str | None = None
     models: Counter = dataclasses.field(default_factory=Counter)
     usage: dict = dataclasses.field(default_factory=lambda: defaultdict(Counter))  # model -> Counter(TOKEN_KEYS)
     # The subagents' share of `usage` (already included in it): model -> Counter(TOKEN_KEYS). Claude
