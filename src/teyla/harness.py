@@ -72,7 +72,7 @@ from . import __version__, plugin_dir
 HOME = pathlib.Path.home()
 HOOKS_DIR = HOME / ".teyla" / "hooks"
 HOOK_SCRIPTS = ("session-start.sh", "capture-correction.sh", "capture-intent.sh", "design-hint.sh", "land-check.sh",
-                "machine-guard.sh", "orchestrator-gate.sh")
+                "machine-guard.sh", "orchestrator-gate.sh", "pr-size-gate.sh")
 PLUGIN_SKILLS = ("harvest", "adoption-review", "wiki-pass", "review", "tidy", "taste")
 CLI_SKILLS = {
     "teyla-rule": (
@@ -378,7 +378,9 @@ def _codex_hooks(existing: dict | None, land_check: bool | None = None) -> dict:
         # documented matcher name for a shell call is `Bash`, input `tool_input.command`).
         "PreToolUse": [group(str(HOOKS_DIR / "machine-guard.sh"), "Bash", 15),
                        # The orchestrator gate: the same matcher; Codex sends `model` in the payload.
-                       group(str(HOOKS_DIR / "orchestrator-gate.sh"), "Bash", 10)],
+                       group(str(HOOKS_DIR / "orchestrator-gate.sh"), "Bash", 10),
+                       # The PR size gate: `gh pr create` / `gh pr merge` over the size limits.
+                       group(str(HOOKS_DIR / "pr-size-gate.sh"), "Bash", 10)],
         "Stop": [group(f"{HOOKS_DIR / 'land-check.sh'} --codex", timeout=10)] if (
             _land_check_on() if land_check is None else land_check) else [],
     }

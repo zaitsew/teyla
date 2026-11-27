@@ -271,7 +271,8 @@ def cmd_monitor(args):
         out = scrub_home(out)
     elif not args.json:
         from .orchestrator_gate import monitor_line
-        out += "\n" + monitor_line(args.days or 7)
+        from .pr_size_gate import monitor_line as size_line
+        out += "\n" + monitor_line(args.days or 7) + size_line(args.days or 7)
     if args.out:
         with open(args.out, "w") as fh:
             fh.write(out)
