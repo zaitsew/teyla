@@ -41,6 +41,12 @@ aliases `run_terminal_command`, `toolInput.command`, exit 2 or a `deny` JSON; ru
 Both facts are from the harness's own docs and binary, see docs/HARNESSES.md. Cursor and Hermes
 are not wired: their hook contracts for a shell call were not verified.
 
+The orchestrator gate (`orchestrator-gate.sh`, `teyla.orchestrator_gate`) is wired into Claude Code and
+Codex the same way (matcher `Bash`): a main session on a top-tier model (Claude Fable, OpenAI Astra) is
+refused a build, a test run, a commit, a push or a merge and told which worker to use. Codex's PreToolUse input
+schema carries `model` and `transcript_path`; Claude Code's model is read from its transcript. Grok, Cursor and
+Hermes are not wired.
+
 Codex parses hooks.json strictly — an unknown top-level key (anything but `description` and
 `hooks`) makes it skip the whole file with "failed to parse hooks config" — so Teyla's marker
 there is the command path under ~/.teyla/hooks/ plus the file's `description`, not a comment.
@@ -65,8 +71,9 @@ from . import __version__, plugin_dir
 
 HOME = pathlib.Path.home()
 HOOKS_DIR = HOME / ".teyla" / "hooks"
-HOOK_SCRIPTS = ("session-start.sh", "capture-correction.sh", "capture-intent.sh", "land-check.sh", "machine-guard.sh")
-PLUGIN_SKILLS = ("harvest", "adoption-review", "wiki-pass", "review", "tidy")
+HOOK_SCRIPTS = ("session-start.sh", "capture-correction.sh", "capture-intent.sh", "design-hint.sh", "land-check.sh",
+                "machine-guard.sh", "orchestrator-gate.sh", "pr-size-gate.sh")
+PLUGIN_SKILLS = ("harvest", "adoption-review", "wiki-pass", "review", "tidy", "taste")
 CLI_SKILLS = {
     "teyla-rule": (
         "Write a one-sentence rule into this repo so a correction is never said twice: `.claude/rules/<slug>.md`, "
@@ -365,10 +372,15 @@ def _codex_hooks(existing: dict | None, land_check: bool | None = None) -> dict:
     wanted = {
         "SessionStart": [group(f"{HOOKS_DIR / 'session-start.sh'} --codex")],
         "UserPromptSubmit": [group(str(HOOKS_DIR / "capture-correction.sh")),
-                             group(f"{HOOKS_DIR / 'capture-intent.sh'} codex")],
+                             group(f"{HOOKS_DIR / 'capture-intent.sh'} codex"),
+                             group(str(HOOKS_DIR / "design-hint.sh"))],
         # The machine guard: PreToolUse on shell calls (`codex features list`: hooks stable; the
         # documented matcher name for a shell call is `Bash`, input `tool_input.command`).
-        "PreToolUse": [group(str(HOOKS_DIR / "machine-guard.sh"), "Bash", 15)],
+        "PreToolUse": [group(str(HOOKS_DIR / "machine-guard.sh"), "Bash", 15),
+                       # The orchestrator gate: the same matcher; Codex sends `model` in the payload.
+                       group(str(HOOKS_DIR / "orchestrator-gate.sh"), "Bash", 10),
+                       # The PR size gate: `gh pr create` / `gh pr merge` over the size limits.
+                       group(str(HOOKS_DIR / "pr-size-gate.sh"), "Bash", 10)],
         "Stop": [group(f"{HOOKS_DIR / 'land-check.sh'} --codex", timeout=10)] if (
             _land_check_on() if land_check is None else land_check) else [],
     }
@@ -387,7 +399,8 @@ def _grok_hooks() -> dict:
     return {"hooks": {
         "SessionStart": [{"hooks": [{"type": "command", "command": str(HOOKS_DIR / "session-start.sh"), "timeout": 5}]}],
         "UserPromptSubmit": [{"hooks": [{"type": "command", "command": str(HOOKS_DIR / "capture-correction.sh"), "timeout": 5}]},
-                             {"hooks": [{"type": "command", "command": f"{HOOKS_DIR / 'capture-intent.sh'} grok", "timeout": 5}]}],
+                             {"hooks": [{"type": "command", "command": f"{HOOKS_DIR / 'capture-intent.sh'} grok", "timeout": 5}]},
+                             {"hooks": [{"type": "command", "command": str(HOOKS_DIR / "design-hint.sh"), "timeout": 5}]}],
         # Grok's `Bash` matcher aliases its run_terminal_command; a PreToolUse exit 2 denies, and
         # `--grok` also prints the full reason as JSON because Grok keeps only the first stderr line.
         "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": f"{HOOKS_DIR / 'machine-guard.sh'} --grok", "timeout": 15}]}],

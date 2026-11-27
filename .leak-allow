@@ -22,6 +22,10 @@ cyrillic:
 # files hold the Russian-language lexicons (phrases the detectors must recognise) and the
 # tests that feed those lexicons Russian text.
 src/teyla/lexicon.py
+# design-request and implement words per language (`teyla design-hint`)
+src/teyla/design_lexicon.py
+# Russian and Spanish prompts that feed the design-request detector
+tests/test_design_hint.py
 # the copy judge's per-language word lists (interjections, first person, imperatives)
 src/teyla/copy_lexicon.py
 # generic store release-note lines per language (`teyla whats-new check`)
