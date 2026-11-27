@@ -101,6 +101,20 @@ Cursor and Grok take the same command in their MCP settings (`command: teyla`, `
   - **Hermes**: not wired; its `pre_tool_call` shell-hook contract was not verified here.
   The guard fails open everywhere (a hook that crashes or times out allows the call); `TEYLA_GUARD=0`
   and `guard.enabled=false` switch it off for every harness.
+- **The orchestrator gate** (`orchestrator-gate.sh`, `python3 -I -m teyla.orchestrator_gate`) refuses a build, a test
+  run, a commit, a push, a merge or a store upload in a main session on a top-tier model (`[orchestrator] top_models`,
+  default Claude Fable and OpenAI Astra) and names the worker to use. It is a PreToolUse hook on `Bash` in Claude Code
+  (plugin `hooks.json`) and Codex (`teyla harness sync`; one more one-time trust).
+  - **Codex**: the 0.172.0 binary embeds the schema `pre-tool-use.command.input`: `model` is required, with
+    `session_id`, `transcript_path` (the rollout), `turn_id`, `cwd`, `tool_input`. The model is read from the payload; if it
+    is missing, from the newest `turn_context` record of the rollout. A rollout whose first record says
+    `thread_source: "subagent"` (a spawned worker) is never gated.
+  - **Claude Code**: no model field is relied on. The model is the `message.model` of the last assistant record at the tail
+    of `transcript_path`; a payload with `agent_id`, a `subagents/` transcript or a sidechain record is a sub-agent and
+    is never gated.
+  - `[orchestrator] gate = "refuse" | "warn" | "off"` (default refuse); `TEYLA_ORCH_OK="<reason>" <command>` allows once and
+    logs the reason; `TEYLA_ORCH_GATE=0` switches the hook off. Rows: `~/.teyla/orchestrator-gate.tsv`, counted by
+    `teyla monitor`. It fails open. Nothing leaves the machine.
 - **The leak guard** (`leak-guard.sh`: the text an agent publishes goes through `teyla leak --text -`, a
   credential file is not read, a Keychain secret is not printed, an existing repo is not made public) is the
   same kind of hook as the machine guard and takes the same wiring. It runs `python3 -I -m teyla.leak_guard`,

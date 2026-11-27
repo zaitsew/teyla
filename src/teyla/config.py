@@ -96,6 +96,10 @@
     context_budget_step  = 30000
     land_check     = false         Stop: once per session, uncommitted or unpushed work is named, with
                                    how to land it (merge only into a MERGE-APPROVED repo)
+    [orchestrator]                 the orchestrator gate (PreToolUse on shell calls, Claude Code and Codex)
+    gate = "refuse"                refuse | warn | off: a main session on a top-tier model is refused builds,
+                                   commits and merges and told to delegate; sub-agents are never gated
+    top_models = ["claude-fable-", "gpt-[0-9.]+-astra"]   regexes searched in the model id
     [guard]                        `teyla load`: the machine guard (snapshot, verdict, admission)
     enabled = true                 false: `--admit` and `--wait` always let the work through
     max_sims = 2                   booted simulators: more is BUSY; `--admit sim` refuses at this many (0 = no cap)
@@ -232,6 +236,9 @@ DEFAULTS = {
     "tidy": {"max_kb": 24, "stale_days": 120},
     # `teyla reviews`: the ledger the review script appends to, and the size below which a PR is exempt.
     "review": {"ledger": "~/.cache/review-ledger.tsv", "min_lines": 7},
+    # The orchestrator gate (`plugin/hooks/orchestrator-gate.sh`): gate = refuse | warn | off. A main session on
+    # a model matching `top_models` (regexes) is refused builds, commits and merges; a worker session is not.
+    "orchestrator": {"gate": "refuse", "top_models": ["claude-fable-", "gpt-[0-9.]+-astra"]},
     # `teyla load`: thresholds of the machine guard. Percentages are of physical RAM; load is per core.
     "guard": {"enabled": True, "max_sims": 2, "max_builds": 2, "max_lanes": 0,
               "swap_crit_pct": 40, "swapout_mb_s": 20, "swap_grow_gb_30m": 4,
