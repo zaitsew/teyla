@@ -269,6 +269,9 @@ def cmd_monitor(args):
     out = to_json(m, F) if args.json else markdown(m, F, include_samples=args.samples)
     if args.share:
         out = scrub_home(out)
+    elif not args.json:
+        from .orchestrator_gate import monitor_line
+        out += "\n" + monitor_line(args.days or 7)
     if args.out:
         with open(args.out, "w") as fh:
             fh.write(out)

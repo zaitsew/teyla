@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Orchestrator gate.** The owner's policy says the top model only orchestrates (Claude Fable, OpenAI Astra) and a worker builds, commits and merges; text alone did not stop a Codex Astra session from running git, builds, simulators and `gh pr merge` itself. `plugin/hooks/orchestrator-gate.sh` (PreToolUse, matcher `Bash`, wired into Claude Code's plugin and into Codex by `teyla harness sync`) now refuses those commands in a main session whose model matches `[orchestrator] top_models` (default `claude-fable-`, `gpt-[0-9.]+-astra`): xcodebuild, `swift build|test`, `simctl boot|install|launch`, gradlew, `npm|pnpm|yarn build|test`, pytest, `./check.sh`, `git commit|push|merge|rebase|cherry-pick`, `gh pr create|merge`, testflight and the review scripts. Read-only commands pass. The model comes from Codex's hook payload (`model`) or the Claude Code transcript; a sub-agent is never gated; every error allows. `[orchestrator] gate = "refuse" | "warn" | "off"`; `TEYLA_ORCH_OK="<reason>" <command>` overrides once. Rows go to `~/.teyla/orchestrator-gate.tsv`, and `teyla monitor` prints the 7-day counts.
+
 - Tests: the web test of offer O6 no longer clones Teyla from github.com. The clone took longer than the test's client waits, so the gate failed, and the abandoned request thread printed into the next test and wrote a change and a diagnosis into the real `~/.teyla`. A test that reaches a remote `git clone` now fails, and the web fixture joins its server's threads. The session-start hook's sync test waits for the line it checks, not for whichever background command writes first.
 
 ## 0.61.1 — 2026-11-24
