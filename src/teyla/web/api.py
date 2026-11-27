@@ -99,6 +99,8 @@ class Job:
         self.name, self.fn, self.ttl, self.on_done = name, fn, ttl, on_done
         self.lock = threading.Lock()
         self.thread: threading.Thread | None = None
+        self.running = False        # decided under the lock, unlike `thread.is_alive()`, which lags the end of `_run`
+        self.rerun = False          # a forced refresh arrived while a run was counting: its numbers may predate the change
         self.data = (saved or {}).get("data")
         self.at = (saved or {}).get("at")
         self.error: str | None = None
@@ -113,25 +115,46 @@ class Job:
 
     def ensure(self, force: bool = False) -> None:
         with self.lock:
-            if self.thread and self.thread.is_alive():
+            if self.running:
+                if force:
+                    self.rerun = True       # an apply or undo landed mid-count: count once more when this run ends
                 return
             if not (force or self.stale()):
                 return
             self.error = None
+            self.running = True
             self.thread = threading.Thread(target=self._run, name=f"teyla-web-{self.name}", daemon=True)
             self.thread.start()
 
     def _run(self) -> None:
-        try:
-            data = self.fn()
-        except Exception as e:  # noqa: BLE001 — the page shows the sentence and keeps the old numbers
+        while True:
+            try:
+                data = self.fn()
+            except Exception as e:  # noqa: BLE001 — the page shows the sentence and keeps the old numbers
+                with self.lock:
+                    self.error = f"could not count the {self.name}: {type(e).__name__}: {e}"
+                    again, self.rerun = self.rerun, False
+                    self.running = again
+                if again:
+                    continue
+                return
             with self.lock:
-                self.error = f"could not count the {self.name}: {type(e).__name__}: {e}"
+                again, self.rerun = self.rerun, False
+                if not again:               # a stale count is dropped: the run that follows reads the settings as they are now
+                    self.data, self.at, self.error = data, _now(), None
+                self.running = again or self.on_done is not None   # stays set through `on_done`: callbacks never overlap
+            if again:
+                continue
+            if self.on_done:
+                try:
+                    self.on_done()
+                finally:
+                    with self.lock:
+                        again, self.rerun = self.rerun, False
+                        self.running = again
+                if again:
+                    continue
             return
-        with self.lock:
-            self.data, self.at, self.error = data, _now(), None
-        if self.on_done:
-            self.on_done()
 
     def patch(self, fn) -> None:
         """Change the cached data in place (`fn(data)`): what an apply does to the offers it just changed."""

@@ -3,6 +3,22 @@
 # run it before pushing. `./check.sh docs` runs only the tests that read a tracked document.
 set -euo pipefail
 cd "$(dirname "$0")"
+# The full pytest output goes to a log, overwritten each run. On a failure the last lines are the failing test ids and
+# the log path, so `./check.sh 2>&1 | tail -5` (an agent keeps only the tail of 8000 lines) still names the test.
+log="${TEYLA_HOME:-$HOME/.teyla}/check-last.log"
+run_pytest() {
+  mkdir -p "$(dirname "$log")" 2>/dev/null || log=/dev/null
+  local rc=0
+  set +e
+  PYTHONPATH=src .venv/bin/python -m pytest -q -rf "$@" 2>&1 | tee "$log"
+  rc=${PIPESTATUS[0]}
+  set -e
+  if [ "$rc" -ne 0 ]; then
+    { echo; grep -E '^FAILED ' "$log" || echo "pytest exited $rc with no FAILED line (collection or setup error?)"
+      echo "check.sh: pytest failed (exit $rc); full output: $log"; } >&2
+  fi
+  return "$rc"
+}
 # Reinstall when pyproject.toml or uv.lock is newer than the stamp, so a new dependency reaches an old .venv.
 stamp=.venv/.teyla-install-stamp
 if [ ! -x .venv/bin/python ] || [ ! -f "$stamp" ] || [ pyproject.toml -nt "$stamp" ] || { [ -f uv.lock ] && [ uv.lock -nt "$stamp" ]; }; then
@@ -14,7 +30,8 @@ PYTHONPATH=src .venv/bin/python scripts/leak_check.py
 # (README.md, AGENTS.md, docs/). tests/conftest.py marks them `docs`. The pre-push hook runs this for a push
 # that changes documents and nothing else, so a README edit costs seconds and still cannot break what they pin.
 if [ "${1:-}" = docs ]; then
-  PYTHONPATH=src exec .venv/bin/python -m pytest -q -m docs
+  run_pytest -m docs
+  exit $?
 fi
 # The web review package (packages/review-web): type check and unit tests. The pytest run below builds
 # its fixture with Vite, so the dependencies must be installed; a Mac without node skips both.
@@ -45,4 +62,4 @@ if [ -n "$android_jdk" ] && [ -n "$android_sdk" ]; then
 else
   echo "skip: packages/review-android (needs a JDK and the Android SDK)"
 fi
-PYTHONPATH=src .venv/bin/python -m pytest -q
+run_pytest

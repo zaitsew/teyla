@@ -215,7 +215,7 @@ def test_this_repos_hook_names_check_sh():
 
 def test_check_sh_docs_runs_the_marked_modules_after_the_leak_check():
     text = (ROOT / "check.sh").read_text()
-    leak, docs, full = text.index("scripts/leak_check.py"), text.index("pytest -q -m docs"), text.rindex("pytest -q")
+    leak, docs, full = text.index("scripts/leak_check.py"), text.index("run_pytest -m docs"), text.rindex("run_pytest")
     assert leak < docs < full
 
 

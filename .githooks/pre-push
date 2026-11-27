@@ -52,6 +52,9 @@ fi
 # read a tracked document (the README's commands and pictures, AGENTS.md, the privacy table).
 # TEYLA_PREPUSH_TESTS=0 skips either for one push; the skip is logged, and a skip that cannot
 # be logged is refused.
+# Every GIT_* variable git hands a hook (GIT_DIR, GIT_PREFIX, GIT_EXEC_PATH, GIT_CONFIG_*, ...) is cleared for the tests:
+# their scratch repositories must see only what they pin themselves.
+git_unset="$(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/-u \1/p' | tr '\n' ' ')"
 mode=none
 if [ "$touched" -eq 1 ]; then mode=full; elif [ "$docs" -eq 1 ]; then mode=docs; fi
 if [ "$mode" != none ] && [ -x ./check.sh ]; then
@@ -66,7 +69,7 @@ if [ "$mode" != none ] && [ -x ./check.sh ]; then
   elif [ "$mode" = docs ]; then
     # About 80 seconds of tests and no build: it does not queue for a build slot.
     echo "pre-push: only documents changed; running ./check.sh docs (TEYLA_PREPUSH_TESTS=0 skips it, logged)" >&2
-    env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_PREFIX ./check.sh docs </dev/null >&2 || {
+    env $git_unset ./check.sh docs </dev/null >&2 || {
       echo "pre-push: ./check.sh docs failed; a document no longer matches what the tests pin" >&2
       exit 1
     }
@@ -76,8 +79,8 @@ if [ "$mode" != none ] && [ -x ./check.sh ]; then
     if command -v teyla >/dev/null 2>&1; then teyla load --wait --kind lane </dev/null >&2 || exit 1; fi
     echo "pre-push: running ./check.sh (TEYLA_PREPUSH_TESTS=0 skips it, logged)" >&2
     # git's own variables must not leak into the tests' scratch repositories
-    env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_PREFIX ./check.sh </dev/null >&2 || {
-      echo "pre-push: ./check.sh failed; fix the failures above before pushing" >&2
+    env $git_unset ./check.sh </dev/null >&2 || {
+      echo "pre-push: ./check.sh failed; fix the failures above before pushing (failing test ids are listed just above; full pytest log: ${TEYLA_HOME:-$HOME/.teyla}/check-last.log)" >&2
       exit 1
     }
   fi
