@@ -7,7 +7,9 @@ Claude Code and Codex) that refuses `gh pr create` and `gh pr merge` for a PR ov
 Size is the PR's diff in changed lines (added + deleted) and files, minus what nobody reviews line by line:
 lock files, `*.pbxproj`, string catalogs, images, fonts and media, snapshot files, generated directories and
 CHANGELOG.md.
-  create: `git diff --numstat -z <base>...HEAD`; the base is `--base`/`-B` or origin/HEAD (local, no network).
+  create: `git diff --numstat -z <base>...<head>`; the base is `--base`/`-B` (origin/<base>, then a local ref) or
+          origin/HEAD; the head is `--head`/`-H` (`branch` or `owner:branch`: the local branch, else origin/<branch>)
+          or HEAD (local, no network).
   merge:  `gh pr view <n|url|branch|current> --json files,additions,deletions,body` (one read-only GitHub call;
           GitHub returns at most 100 files, and a PR of 100 files is over any file limit anyway).
 
@@ -18,12 +20,14 @@ Config, `~/.teyla/config.toml`:
   mode = "refuse"          # refuse | warn | off
 
 Over the limit, exit 2 and a stderr message with the counts, the top directories and a split hint.
-Escape: a line `Size-OK: <reason>` in the PR body (create: the --body / --body-file text or the command text;
-merge: the PR's body), or `TEYLA_SIZE_OK="<reason>"` in the hook's environment or as a leading assignment word.
-Either allows and logs the reason. Every error allows (fail open).
+Escape: a line `Size-OK: <reason>` in the PR body (create: the parsed --body value, the --body-file file and a
+heredoc on stdin; merge: the PR's body), or `TEYLA_SIZE_OK="<reason>"` in the hook's environment or as a leading assignment word.
+Either allows and logs the reason. Every error allows (fail open). When the size cannot be computed (no base, a head that
+does not exist, `gh` failing, no checkout) the call is allowed and a row with the reason `unsized: <why>` is logged.
+`gh pr merge <URL>` takes owner/repo from the URL, or from `-R/--repo`, so it works outside a checkout.
 
 Rows go to `~/.teyla/pr-size-gate.tsv` (`$TEYLA_HOME` overrides the directory):
-`date, harness, repo, PR, lines, files, reason` where the reason is the override text, `refused` or `warned`.
+`date, harness, repo, PR, lines, files, reason` where the reason is the override text, `refused`, `warned` or `unsized: <why>`.
 """
 from __future__ import annotations
 
@@ -119,8 +123,10 @@ def log_row(harness: str, repo: str, pr: str, lines: int, files: int, reason: st
 # --- which command is a PR create / merge ---------------------------------------------------------------------
 
 class Call:
-    def __init__(self, action: str, args: list[str], lead_reason: str, cwd: str | None, text: str):
+    def __init__(self, action: str, args: list[str], lead_reason: str, cwd: str | None, text: str,
+                 heredocs: list[str] | None = None):
         self.action, self.args, self.lead_reason, self.cwd, self.text = action, args, lead_reason, cwd, text
+        self.heredocs = heredocs or []
 
 
 VALUE_OPTS = {"-R", "--repo", "-B", "--base", "-H", "--head", "-b", "--body", "-F", "--body-file", "-t", "--title",
@@ -189,7 +195,7 @@ def find_calls(command: str, depth: int = 0) -> list[Call]:
             if a.startswith("TEYLA_SIZE_OK="):
                 lead = a.split("=", 1)[1].strip("'\"") or "override"
         calls.append(Call(act, a2, lead, cmd.cwd if isinstance(cmd.cwd, str) and cmd.cwd else chdir,
-                          "\n".join([command] + cmd.heredocs)))
+                          "\n".join([command] + cmd.heredocs), list(cmd.heredocs)))
     return calls
 
 
@@ -198,7 +204,7 @@ def find_calls(command: str, depth: int = 0) -> list[Call]:
 def _run(argv: list[str], cwd: str | None, environ=os.environ) -> str:
     p = subprocess.run(argv, cwd=cwd or None, capture_output=True, text=True, timeout=CALL_TIMEOUT, env=dict(environ))
     if p.returncode != 0:
-        raise RuntimeError(f"{argv[0]} {argv[1]} exited {p.returncode}")
+        raise RuntimeError(f"{' '.join(argv[:3])} exited {p.returncode}")
     return p.stdout
 
 
@@ -218,8 +224,37 @@ def default_base(cwd: str | None, environ=os.environ) -> str:
     raise RuntimeError("no base branch")
 
 
-def numstat(base: str, cwd: str | None, environ=os.environ) -> list[tuple[str, int]]:
-    out = _run(["git", "diff", "--numstat", "-z", f"{base}...HEAD"], cwd, environ)
+def _verify(ref: str, cwd: str | None, environ) -> bool:
+    try:
+        _run(["git", "rev-parse", "--verify", "--quiet", ref + "^{commit}"], cwd, environ)
+        return True
+    except Exception:
+        return False
+
+
+def resolve_base(base: str, cwd: str | None, environ=os.environ) -> str:
+    """`--base X`: origin/X (the remote ref, also for `release/v1`), then a local ref; no --base: origin/HEAD."""
+    if not base:
+        return default_base(cwd, environ)
+    for cand in (f"refs/remotes/origin/{base}", f"refs/heads/{base}", base):
+        if _verify(cand, cwd, environ):
+            return cand
+    raise RuntimeError(f"base {base} not found")
+
+
+def resolve_head(head: str, cwd: str | None, environ=os.environ) -> str:
+    """`--head X` or `owner:X`: the local branch X, else origin/X; no --head: HEAD."""
+    if not head:
+        return "HEAD"
+    branch = head.split(":", 1)[1] if ":" in head else head
+    for cand in (f"refs/heads/{branch}", f"refs/remotes/origin/{branch}"):
+        if _verify(cand, cwd, environ):
+            return cand
+    raise RuntimeError(f"head {head} not found locally or on origin")
+
+
+def numstat(base: str, cwd: str | None, environ=os.environ, head: str = "HEAD") -> list[tuple[str, int]]:
+    out = _run(["git", "diff", "--numstat", "-z", f"{base}...{head}"], cwd, environ)
     toks = out.split("\0")
     entries, i = [], 0
     while i < len(toks):
@@ -237,40 +272,28 @@ def numstat(base: str, cwd: str | None, environ=os.environ) -> list[tuple[str, i
 
 
 def body_text(call: Call) -> str:
-    """The text of a create call that may carry `Size-OK:`: the command text and any --body-file."""
-    text = call.text
+    """The text of a create call that may carry `Size-OK:`: the parsed --body values, the --body-file files and
+    a heredoc on stdin. Never the raw command text."""
+    parts = list(_opt(call.args, ("-b",), ("--body",)))
     for f in _opt(call.args, ("-F",), ("--body-file",)):
         if f and f != "-":
             try:
                 p = pathlib.Path(f).expanduser()
                 if not p.is_absolute() and call.cwd:
                     p = pathlib.Path(call.cwd) / p
-                text += "\n" + p.read_text(encoding="utf-8", errors="replace")[:200000]
+                parts.append(p.read_text(encoding="utf-8", errors="replace")[:200000])
             except OSError:
                 pass
-    return text
+    parts += call.heredocs
+    return "\n".join(parts)
 
 
-def measure(call: Call, cwd: str | None, environ=os.environ) -> tuple[int, int, dict[str, int], str, str, str]:
-    """(lines, files, by_dir, PR label, repo, PR body text) for the call."""
-    repo_opt = (_opt(call.args, ("-R",), ("--repo",)) or [""])[0]
-    if call.action == "create":
-        base = (_opt(call.args, ("-B",), ("--base",)) or [""])[0]
-        if base and "/" not in base and not base.startswith("origin"):
-            for cand in (f"origin/{base}", base):
-                try:
-                    _run(["git", "rev-parse", "--verify", "--quiet", cand], cwd, environ)
-                    base = cand
-                    break
-                except Exception:
-                    continue
-        base = base or default_base(cwd, environ)
-        lines, files, by_dir = count(numstat(base, cwd, environ))
-        repo = repo_opt or os.path.basename(_run(["git", "rev-parse", "--show-toplevel"], cwd, environ).strip())
-        return lines, files, by_dir, "create", repo, body_text(call)
-    sel = ""
+PR_URL_RE = re.compile(r"^https?://([^/\s]+)/([^/\s]+)/([^/\s]+)/pull/\d+")
+
+
+def _selector(args: list[str]) -> str:
     skip = False
-    for a in call.args:
+    for a in args:
         if skip:
             skip = False
             continue
@@ -278,15 +301,42 @@ def measure(call: Call, cwd: str | None, environ=os.environ) -> tuple[int, int, 
             skip = True
             continue
         if not a.startswith("-"):
-            sel = a
-            break
-    argv = ["gh", "pr", "view"] + ([sel] if sel else []) + (["-R", repo_opt] if repo_opt else []) + \
+            return a
+    return ""
+
+
+def repo_label(call: Call, cwd: str | None, environ=os.environ) -> str:
+    """owner/repo from -R or the PR URL, else the checkout's directory name, else "unknown". Never raises."""
+    repo_opt = (_opt(call.args, ("-R",), ("--repo",)) or [""])[0]
+    if repo_opt:
+        return repo_opt
+    m = PR_URL_RE.match(_selector(call.args)) if call.action == "merge" else None
+    if m:
+        return f"{m.group(2)}/{m.group(3)}"
+    try:
+        return os.path.basename(_run(["git", "rev-parse", "--show-toplevel"], cwd, environ).strip()) or "unknown"
+    except Exception:
+        return "unknown"
+
+
+def measure(call: Call, cwd: str | None, environ=os.environ) -> tuple[int, int, dict[str, int], str, str, str]:
+    """(lines, files, by_dir, PR label, repo, PR body text) for the call."""
+    repo = repo_label(call, cwd, environ)
+    if call.action == "create":
+        base = resolve_base((_opt(call.args, ("-B",), ("--base",)) or [""])[0], cwd, environ)
+        head = resolve_head((_opt(call.args, ("-H",), ("--head",)) or [""])[0], cwd, environ)
+        lines, files, by_dir = count(numstat(base, cwd, environ, head))
+        return lines, files, by_dir, "create", repo, body_text(call)
+    sel = _selector(call.args)
+    repo_opt = (_opt(call.args, ("-R",), ("--repo",)) or [""])[0]
+    m = PR_URL_RE.match(sel)
+    # a PR URL names its repository; gh needs no checkout and no -R for it
+    argv = ["gh", "pr", "view"] + ([sel] if sel else []) + (["-R", repo_opt] if repo_opt and not m else []) + \
            ["--json", "files,additions,deletions,body"]
     data = json.loads(_run(argv, cwd, environ))
     entries = [(f.get("path", ""), int(f.get("additions", 0)) + int(f.get("deletions", 0)))
                for f in data.get("files") or [] if isinstance(f, dict)]
     lines, files, by_dir = count(entries)
-    repo = repo_opt or os.path.basename(_run(["git", "rev-parse", "--show-toplevel"], cwd, environ).strip())
     return lines, files, by_dir, sel or "current", repo, str(data.get("body") or "")
 
 
@@ -331,7 +381,13 @@ def decide(payload: dict, environ=os.environ) -> str | None:
         where = call.cwd or cwd
         if where and not os.path.isabs(where) and cwd:
             where = os.path.join(cwd, where)
-        lines, files, by_dir, pr, repo, body = measure(call, where, environ)
+        try:
+            lines, files, by_dir, pr, repo, body = measure(call, where, environ)
+        except Exception as e:  # fail open, but leave a row `teyla monitor` can count
+            why = f"{type(e).__name__}: {e}"
+            log_row(harness, repo_label(call, where, environ), call.action, 0, 0, f"unsized: {why}", environ)
+            print(f"teyla PR size gate: not sized ({why[:100]}); allowed", file=sys.stderr)
+            continue
         if lines <= cfg["max_lines"] and files <= cfg["max_files"]:
             continue
         reason = override_reason(call, body, environ)
@@ -373,11 +429,12 @@ def monitor_line(days: int = 7, environ=os.environ, now: dt.datetime | None = No
     except OSError:
         return ""
     cutoff = ((now or dt.datetime.now()) - dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
-    counts = {"refused": 0, "warned": 0, "overridden": 0}
+    counts = {"refused": 0, "warned": 0, "overridden": 0, "unsized": 0}
     for r in rows:
         f = r.split("\t")
         if len(f) >= 7 and f[0] >= cutoff:
-            counts["refused" if f[6] == "refused" else "warned" if f[6] == "warned" else "overridden"] += 1
+            counts["refused" if f[6] == "refused" else "warned" if f[6] == "warned"
+                   else "unsized" if f[6].startswith("unsized:") else "overridden"] += 1
     parts = ", ".join(f"{n} {k}" for k, n in counts.items() if n)
     return f"PR size gate, last {days} days: {parts}.\n" if parts else ""
 
