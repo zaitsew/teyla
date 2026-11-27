@@ -67,6 +67,7 @@ Hooks run in Claude Code and Cowork. Claude chat on the web ignores them. All ar
 | `PreToolUse` (Bash) | `machine-guard.sh` | Refuses a build, a simulator boot or a headless agent while the machine is out of memory. Needs the CLI, otherwise allows. It fails open. | on, CLI only |
 | `PreToolUse` (Bash, Read, Edit, Write) | `leak-guard.sh` | The agent boundary. Scans the text a `gh pr\|issue\|release\|gist` call or a `git commit\|tag` publishes for secrets and private terms, and refuses a read of a credential file, a Keychain dump and `gh repo edit --visibility public`. A command with none of those words passes at once. One that has them is refused when the guard cannot run: it needs `python3` and the `teyla` package. | on, CLI required for publications |
 | `PreToolUse` (Bash) | `orchestrator-gate.sh` | Refuses a build, a test run, a commit, a push or a merge in a main session on a top-tier model (Claude Fable, OpenAI Astra) and names the worker to use. Sub-agents are never gated. `[orchestrator] gate = "refuse\|warn\|off"`; `TEYLA_ORCH_OK="<reason>"` overrides once and is logged. Needs the CLI, otherwise allows. It fails open. | on, CLI only |
+| `PreToolUse` (Bash) | `pr-size-gate.sh` | Refuses `gh pr create` and `gh pr merge` for a PR over 800 changed lines or 20 files (lock files, generated files, string catalogs and media not counted) and says how to split it. `[pr_size] max_lines`, `max_files`, `mode = "refuse\|warn\|off"`; a `Size-OK: <reason>` line in the PR body or `TEYLA_SIZE_OK="<reason>"` overrides and is logged. A merge makes one read-only `gh pr view`. Needs the CLI, otherwise allows. It fails open. | on, CLI only |
 | `Stop` | `land-check.sh` | Once per session, notes work that never reached a remote. | off (`teyla config set hooks.land_check=true`) |
 | `SessionStart`, `UserPromptSubmit`, `PostToolUse` | `context-budget.sh` | Asks the model to write a handoff note before a long session compacts, and puts it back after. | off (`teyla config set hooks.context_budget=true`) |
 
@@ -125,6 +126,7 @@ with the one optional exception under Network.
 | `~/.teyla/intent/<repo>.md` (mode 0600) | `capture-intent.sh` | prompts of 400+ characters, word for word, secrets scrubbed |
 | `~/.teyla/handoff/<session>.md` (mode 0600) | `context-budget` (opt-in) | the model's own handoff note |
 | `~/.teyla/orchestrator-gate.tsv` | `orchestrator-gate.sh` | a timestamp, the event (`refuse`, `warn`, `override`, `error`), harness, model and the first two words of the command (`git commit`); an override also keeps its reason |
+| `~/.teyla/pr-size-gate.tsv` | `pr-size-gate.sh` | a timestamp, harness, repo name, PR, changed lines, files, and `refused`, `warned` or the override reason |
 | `~/.teyla/leak-skips.log` | `leak-guard.sh` | a timestamp and `skip` each time `TEYLA_LEAK_GUARD=0` skips a publication scan; never the text |
 | `$TMPDIR/teyla-land-check/<session>` | `land-check` (opt-in) | an empty marker file |
 | `~/.teyla/*` (stamps, notice files) | the CLI and `session-start.sh`, on a machine where Teyla is set up | small state files |

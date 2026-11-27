@@ -100,6 +100,10 @@
     gate = "refuse"                refuse | warn | off: a main session on a top-tier model is refused builds,
                                    commits and merges and told to delegate; sub-agents are never gated
     top_models = ["claude-fable-", "gpt-[0-9.]+-astra"]   regexes searched in the model id
+    [pr_size]                      the PR size gate (PreToolUse on `gh pr create` / `gh pr merge`)
+    max_lines = 800                changed lines (lock files, generated files, string catalogs, media excluded)
+    max_files = 20                 changed files
+    mode = "refuse"                refuse | warn | off; `Size-OK: <reason>` in the PR body overrides
     [guard]                        `teyla load`: the machine guard (snapshot, verdict, admission)
     enabled = true                 false: `--admit` and `--wait` always let the work through
     max_sims = 2                   booted simulators: more is BUSY; `--admit sim` refuses at this many (0 = no cap)
@@ -239,6 +243,8 @@ DEFAULTS = {
     # The orchestrator gate (`plugin/hooks/orchestrator-gate.sh`): gate = refuse | warn | off. A main session on
     # a model matching `top_models` (regexes) is refused builds, commits and merges; a worker session is not.
     "orchestrator": {"gate": "refuse", "top_models": ["claude-fable-", "gpt-[0-9.]+-astra"]},
+    # The PR size gate (`plugin/hooks/pr-size-gate.sh`): `gh pr create` / `gh pr merge` over the limits is refused.
+    "pr_size": {"max_lines": 800, "max_files": 20, "mode": "refuse"},
     # `teyla load`: thresholds of the machine guard. Percentages are of physical RAM; load is per core.
     "guard": {"enabled": True, "max_sims": 2, "max_builds": 2, "max_lanes": 0,
               "swap_crit_pct": 40, "swapout_mb_s": 20, "swap_grow_gb_30m": 4,
