@@ -96,6 +96,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/pr-size-gate.sh\"",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PostToolUse": [

@@ -115,6 +115,17 @@ Cursor and Grok take the same command in their MCP settings (`command: teyla`, `
   - `[orchestrator] gate = "refuse" | "warn" | "off"` (default refuse); `TEYLA_ORCH_OK="<reason>" <command>` allows once and
     logs the reason; `TEYLA_ORCH_GATE=0` switches the hook off. Rows: `~/.teyla/orchestrator-gate.tsv`, counted by
     `teyla monitor`. It fails open. Nothing leaves the machine.
+- **The PR size gate** (`pr-size-gate.sh`, `python3 -I -m teyla.pr_size_gate`) refuses `gh pr create` and `gh pr merge`
+  (also inside `bash -lc '...'`) for a PR over `[pr_size] max_lines` (800) changed lines or `max_files` (20) files. Lock
+  files, `*.pbxproj`, string catalogs, images, fonts, media, snapshot files, `dist/`, `build/`, `Generated/` and
+  CHANGELOG.md are not counted. It is a PreToolUse hook on `Bash` in Claude Code (plugin `hooks.json`) and Codex
+  (`teyla harness sync`, one more one-time trust); a command without `gh` and `pr` costs no process.
+  - Create is sized from `git diff --numstat <base>...HEAD` (`--base` or origin/HEAD); merge from one
+    `gh pr view --json files,additions,deletions,body` (PRIVACY row 61).
+  - The refusal gives the counts, the top five directories by changed lines and a split hint.
+  - Escape: a line `Size-OK: <reason>` in the PR body, or `TEYLA_SIZE_OK="<reason>" <command>`. Both are logged.
+    `[pr_size] mode = "refuse" | "warn" | "off"`; `TEYLA_PR_SIZE_GATE=0` switches the hook off. Rows:
+    `~/.teyla/pr-size-gate.tsv`, counted by `teyla monitor`. It fails open.
 - **The leak guard** (`leak-guard.sh`: the text an agent publishes goes through `teyla leak --text -`, a
   credential file is not read, a Keychain secret is not printed, an existing repo is not made public) is the
   same kind of hook as the machine guard and takes the same wiring. It runs `python3 -I -m teyla.leak_guard`,
@@ -239,6 +250,7 @@ One experience in every harness: a guard that Claude Code runs, Codex runs too. 
 | `leak-guard.sh` | PreToolUse `Bash\|Read\|Edit\|Write\|MultiEdit` | yes | yes, `Bash\|apply_patch` | yes, `--grok` |
 | `platform-gate.sh` | PreToolUse `Edit\|Write\|MultiEdit\|NotebookEdit` | yes | yes, `apply_patch` | yes |
 | `machine-guard.sh` | PreToolUse `Bash` | yes | yes | yes, `--grok` |
+| `pr-size-gate.sh` | PreToolUse `Bash` | yes | yes | no: not wired |
 | `orchestrator-gate.sh` | PreToolUse `Bash` | yes | yes | no: not wired; Grok's `model` field was not verified |
 | `land-check.sh` | Stop, opt-in | yes | yes | no: not wired; its Stop contract was not verified |
 | `context-budget.sh` | SessionStart `compact`, UserPromptSubmit, PostToolUse, opt-in | yes | no: reads a Claude transcript | no |
