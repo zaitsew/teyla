@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Codex sub-agents keep their own id.** A spawned Codex agent was keyed by its parent's id, so `teyla spend --session` printed one id many times. Each rollout is now keyed by its own id and records its parent, role and nickname. `teyla spend --session <id or prefix>` resolves to the orchestrator and prints one row per worker (role, nickname, model, cost) and the split "orchestrator $X (N%), workers $Y"; the JSON gains `orchestrator_usd`, `workers_usd`, `workers_share` and `workers`. `teyla lanes` lists spawned Codex agents as `codex/<role>` rows; a rollout with no model takes it from `~/.codex/agents/<role>.toml`.
+
 - Tests: the web test of offer O6 no longer clones Teyla from github.com. The clone took longer than the test's client waits, so the gate failed, and the abandoned request thread printed into the next test and wrote a change and a diagnosis into the real `~/.teyla`. A test that reaches a remote `git clone` now fails, and the web fixture joins its server's threads. The session-start hook's sync test waits for the line it checks, not for whichever background command writes first.
 
 ## 0.61.1 — 2026-11-24
