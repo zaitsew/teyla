@@ -517,7 +517,8 @@ def test_the_hook_is_registered_after_the_kill_switch_and_keeps_the_others():
     hooks = json.loads((ROOT / "plugin" / "hooks" / "hooks.json").read_text())["hooks"]["PreToolUse"]
     cmds = [(g.get("matcher"), h["command"], h["timeout"]) for g in hooks for h in g["hooks"]]
     names = [c[1].rsplit("/", 1)[1].rstrip('"') for c in cmds]
-    assert names == ["pre-tool-use.sh", "leak-guard.sh", "platform-gate.sh", "machine-guard.sh"]
+    assert names == ["pre-tool-use.sh", "leak-guard.sh", "platform-gate.sh", "machine-guard.sh",
+                     "orchestrator-gate.sh"]
     matcher, _cmd, timeout = cmds[1]
     assert set(matcher.split("|")) >= {"Bash", "Read", "Edit", "Write"} and timeout > 25
 

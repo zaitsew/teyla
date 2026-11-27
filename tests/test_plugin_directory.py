@@ -229,6 +229,8 @@ PAYLOADS = {
     "pre-tool-use.sh": {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}},
     "machine-guard.sh": {"hook_event_name": "PreToolUse", "tool_name": "Bash",
                          "tool_input": {"command": "xcodebuild -scheme App build"}},
+    "orchestrator-gate.sh": {"hook_event_name": "PreToolUse", "tool_name": "Bash",
+                             "tool_input": {"command": "git commit -m x"}, "model": "gpt-6.2-astra"},
     "leak-guard.sh": {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls -la"}},
     "platform-gate.sh": {"hook_event_name": "PreToolUse", "tool_name": "Edit",
                          "tool_input": {"file_path": "/nonexistent/a.swift"}},
