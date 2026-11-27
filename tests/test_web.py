@@ -571,3 +571,26 @@ def test_two_dashboards_on_one_machine_keep_their_own_cookie(web, tmp_path):
     finally:
         other.shutdown()
         t.join(5)
+
+
+# --- a forced refresh that lands during a count --------------------------------------------------
+
+def test_a_forced_refresh_during_a_count_runs_again_and_drops_the_stale_numbers():
+    # Apply starts a recount; an undo right after asks for another. Before, the second ask was ignored while the
+    # first count ran, and that count (read before the undo) became the page's numbers: a flaky gate on a busy Mac.
+    started, release, reads = threading.Event(), threading.Event(), []
+
+    def fn():
+        reads.append(len(reads))
+        if len(reads) == 1:
+            started.set()
+            assert release.wait(30)
+        return {"n": len(reads)}
+
+    job = api_mod.Job("diagnosis", fn, 3600, None)
+    job.ensure(force=True)
+    assert started.wait(30)
+    job.ensure(force=True)                  # lands while the first count is still running
+    release.set()
+    job.join(30)
+    assert len(reads) == 2 and job.get()["data"] == {"n": 2} and not job.get()["refreshing"]
