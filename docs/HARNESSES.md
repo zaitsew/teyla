@@ -134,6 +134,10 @@ Cursor and Grok take the same command in their MCP settings (`command: teyla`, `
   correction hook in all four: Codex `UserPromptSubmit` and Grok `UserPromptSubmit` (`... codex`,
   `... grok`), Cursor `beforeSubmitPrompt` (no argument; its entries read `other`) and Hermes
   `pre_llm_call` (`... hermes`). Backfill reads only Claude Code and Codex transcripts.
+- **The design hint** (`design-hint.sh`, `teyla.design_hint`) is the one prompt hook that prints: its stdout
+  becomes model context. It fires in Claude Code, Codex and Grok `UserPromptSubmit` (Grok's injection of
+  hook stdout is not verified here), not in Cursor or Hermes, whose prompt hooks do not take plain stdout.
+  Word lists: `src/teyla/design_lexicon.py`. The `taste` skill syncs as `teyla-taste` to every harness.
 - **Approval, once, in the harness.** Codex runs a new or changed hook only after you trust
   it: open Codex in a terminal (`codex`), answer "Hooks need review" with *Trust all and
   continue*, or use `/hooks`. Until then it skips the hook silently, `codex exec` included

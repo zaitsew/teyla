@@ -66,13 +66,13 @@ def test_sync_writes_skills_hooks_and_is_idempotent(home):
     # second run: nothing to do
     assert harness.sync(home=home) == ["in sync: cursor, codex, grok, hermes"]
     rows = {r["harness"]: r for r in harness.status(home=home)}
-    assert rows["cursor"]["skills"] == 7 and rows["cursor"]["hooks"] is True
+    assert rows["cursor"]["skills"] == 8 and rows["cursor"]["hooks"] is True
     assert rows["codex"]["hooks"] is True and rows["grok"]["hooks"] is True and rows["hermes"]["hooks"] is True
     # wired is not approved: Codex and Hermes skip a hook nobody trusted
-    assert rows["codex"]["trust"] == {"approved": 0, "total": 5,
+    assert rows["codex"]["trust"] == {"approved": 0, "total": 6,
                                       "missing": ["SessionStart untrusted", "UserPromptSubmit untrusted",
-                                                  "UserPromptSubmit untrusted", "PreToolUse untrusted",
-                                                  "PreToolUse untrusted"]}
+                                                  "UserPromptSubmit untrusted", "UserPromptSubmit untrusted",
+                                                  "PreToolUse untrusted", "PreToolUse untrusted"]}
     assert rows["hermes"]["trust"]["approved"] == 0 and rows["hermes"]["trust"]["total"] == 4
     assert rows["grok"]["trust"] is None and rows["cursor"]["trust"] is None
     text = harness.render_status(harness.status(home=home))
@@ -214,10 +214,10 @@ def test_codex_sync_keeps_a_users_handler_that_shares_a_group_with_ours(home):
     d = json.loads(p.read_text())["hooks"]
     assert d["SessionStart"][0] == {"matcher": "startup", "hooks": [theirs]}
     assert len(d["SessionStart"]) == 2 and d["SessionStart"][1]["hooks"][0]["command"] == old
-    assert len(d["UserPromptSubmit"]) == 2  # the correction hook the user had, and the intent hook added after it
+    assert len(d["UserPromptSubmit"]) == 3  # the correction hook the user had, and the intent and design hooks added
     assert harness.sync(home=home) == ["in sync: cursor, codex, grok, hermes"]
     tr = {r["harness"]: r for r in harness.status(home=home)}["codex"]["trust"]
-    assert tr["total"] == 5  # the user's handler is not counted as Teyla's
+    assert tr["total"] == 6  # the user's handler is not counted as Teyla's
 
 
 def test_hermes_auto_accept_is_a_top_level_true_key_not_a_substring(home):
@@ -254,6 +254,7 @@ def test_codex_trust_is_read_from_config_toml(home):
     d = json.loads(hooks_json.read_text())
     ss, ups = d["hooks"]["SessionStart"][0]["hooks"][0], d["hooks"]["UserPromptSubmit"][0]["hooks"][0]
     intent_hook = d["hooks"]["UserPromptSubmit"][1]["hooks"][0]
+    design_hook = d["hooks"]["UserPromptSubmit"][2]["hooks"][0]
     pre = d["hooks"]["PreToolUse"][0]
     orch = d["hooks"]["PreToolUse"][1]
     cfg = home / ".codex" / "config.toml"
@@ -261,18 +262,20 @@ def test_codex_trust_is_read_from_config_toml(home):
                    f'[hooks.state."{hooks_json}:session_start:0:0"]\ntrusted_hash = "{harness.codex_hook_hash("SessionStart", ss)}"\n\n'
                    f'[hooks.state."{hooks_json}:user_prompt_submit:0:0"]\ntrusted_hash = "sha256:stale"\n')
     tr = {r["harness"]: r for r in harness.status(home=home)}["codex"]["trust"]
-    assert tr == {"approved": 1, "total": 5, "missing": ["UserPromptSubmit modified since trusted", "UserPromptSubmit untrusted",
-                                                "PreToolUse untrusted", "PreToolUse untrusted"]}
+    assert tr == {"approved": 1, "total": 6, "missing": ["UserPromptSubmit modified since trusted", "UserPromptSubmit untrusted",
+                                                "UserPromptSubmit untrusted", "PreToolUse untrusted", "PreToolUse untrusted"]}
     cfg.write_text(cfg.read_text().replace("sha256:stale", harness.codex_hook_hash("UserPromptSubmit", ups))
                    + f'\n[hooks.state."{hooks_json}:user_prompt_submit:1:0"]\n'
                    f'trusted_hash = "{harness.codex_hook_hash("UserPromptSubmit", intent_hook)}"\n'
+                   + f'\n[hooks.state."{hooks_json}:user_prompt_submit:2:0"]\n'
+                   f'trusted_hash = "{harness.codex_hook_hash("UserPromptSubmit", design_hook)}"\n'
                    + f'\n[hooks.state."{hooks_json}:pre_tool_use:0:0"]\n'
                    f'trusted_hash = "{harness.codex_hook_hash("PreToolUse", pre["hooks"][0], pre["matcher"])}"\n'
                    + f'\n[hooks.state."{hooks_json}:pre_tool_use:1:0"]\n'
                    f'trusted_hash = "{harness.codex_hook_hash("PreToolUse", orch["hooks"][0], orch["matcher"])}"\n')
     tr = {r["harness"]: r for r in harness.status(home=home)}["codex"]["trust"]
-    assert tr == {"approved": 5, "total": 5, "missing": []}
-    assert "approved 5/5" in harness.render_status(harness.status(home=home))
+    assert tr == {"approved": 6, "total": 6, "missing": []}
+    assert "approved 6/6" in harness.render_status(harness.status(home=home))
 
 
 def test_codex_machine_guard_group_keeps_a_users_pretooluse_groups_and_is_trusted_by_its_matcher(home):
