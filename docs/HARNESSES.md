@@ -28,8 +28,8 @@ teyla doctor           # the same, as OK/FIX lines
 |---|---|---|---|---|---|
 | **Claude Code** | `@~/.agents/POLICY.md` in `~/.claude/CLAUDE.md` | `.claude/rules/*.md` (`globs:`), `CLAUDE.md` | the plugin (`teyla plugin install`) | plugin `hooks.json`: SessionStart, UserPromptSubmit, PreToolUse (kill switch; machine guard on `Bash`); opt-in PostToolUse + Stop (`[hooks]`) | `~/.claude/projects/**/*.jsonl` |
 | **Cursor** (app) | a user skill `~/.cursor/skills/teyla-policy/SKILL.md` carrying the policy text and your own rules (as for Codex) — Cursor has no global rules file (`create-rule/SKILL.md` names only `.cursor/rules/*.mdc` per project) | `AGENTS.md` at the repo root; `.cursor/rules/<slug>.mdc` when that directory exists (`teyla rule` fills both) | `~/.cursor/skills/teyla-*/SKILL.md` (`name`, `description`, `disable-model-invocation: false`) | `~/.cursor/hooks.json`: `sessionStart`, `beforeSubmitPrompt` (JSON on stdin); no machine guard | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` (`composerData:*`, `bubbleId:*`; model name, turns, tools; no per-message tokens) |
-| **Codex** (ChatGPT app / CLI) | `~/.codex/AGENTS.md`, generated: `POLICY.md` + your own rules from `~/.claude/CLAUDE.md` (a `POLICY.md` symlink while CLAUDE.md holds only the import) | `AGENTS.md` per directory | `~/.codex/skills/teyla-*/SKILL.md` | `~/.codex/hooks.json`: `SessionStart`, `UserPromptSubmit`, `PreToolUse` on `Bash` (the machine guard) (Claude Code's shape; `codex features list`: `hooks stable true`), and `Stop` while `[hooks] land_check` is on; each runs only after you trust it once in Codex | `~/.codex/sessions/**/rollout-*.jsonl` |
-| **Grok CLI** | `~/.grok/AGENTS.md`, generated as for Codex | `Agents.md`/`CLAUDE.md`/`AGENTS.md` per directory, repo root down to cwd (`12-project-rules.md`) | `~/.grok/skills/teyla-*/SKILL.md`; also scans `~/.claude/skills`, `~/.cursor/skills`, `.agents/skills` (`08-skills.md`) | `~/.grok/hooks/teyla.json`: `SessionStart`, `UserPromptSubmit`, `PreToolUse` on `Bash` (the machine guard); it also loads `~/.cursor/hooks.json` and `~/.claude/settings.json` (`10-hooks.md`), so the capture hook de-duplicates | `~/.grok/sessions/<cwd>/<id>/` |
+| **Codex** (ChatGPT app / CLI) | `~/.codex/AGENTS.md`, generated: `POLICY.md` + your own rules from `~/.claude/CLAUDE.md` (a `POLICY.md` symlink while CLAUDE.md holds only the import) | `AGENTS.md` per directory | `~/.codex/skills/teyla-*/SKILL.md` | `~/.codex/hooks.json`: `SessionStart`, `UserPromptSubmit`, `PreToolUse` (machine and orchestrator gates on `Bash`, kill switch on every tool, leak guard on `Bash` and `apply_patch`, platform gate on `apply_patch`) (Claude Code's shape; `codex features list`: `hooks stable true`), and `Stop` while `[hooks] land_check` is on; each runs only after you trust it once in Codex | `~/.codex/sessions/**/rollout-*.jsonl` |
+| **Grok CLI** | `~/.grok/AGENTS.md`, generated as for Codex | `Agents.md`/`CLAUDE.md`/`AGENTS.md` per directory, repo root down to cwd (`12-project-rules.md`) | `~/.grok/skills/teyla-*/SKILL.md`; also scans `~/.claude/skills`, `~/.cursor/skills`, `.agents/skills` (`08-skills.md`) | `~/.grok/hooks/teyla.json`: `SessionStart`, `UserPromptSubmit`, `PreToolUse` (machine guard on `Bash`, kill switch, leak guard, platform gate); it also loads `~/.cursor/hooks.json` and `~/.claude/settings.json` (`10-hooks.md`), so the capture hook de-duplicates | `~/.grok/sessions/<cwd>/<id>/` |
 | **Hermes** (app / CLI) | an "Operating policy" section in `~/.hermes/SOUL.md` | `AGENTS.md` chain from the git root (`context-files.md`; `.hermes.md` → `AGENTS.md` → `CLAUDE.md` → `.cursorrules`, first match) | `~/.hermes/skills/teyla/teyla-*/SKILL.md`, each also a slash command (`skills.md`) | a `hooks:` block in `~/.hermes/config.yaml`: `on_session_start`, and two `pre_llm_call` shell hooks (capture; first-turn orientation), no machine guard; Hermes asks once per hook before running it (`hooks.md`, "Shell hooks") | `~/.hermes/state.db` |
 
 The skills are rendered from the plugin's own `SKILL.md` files with `/teyla:rule` and
@@ -224,3 +224,38 @@ interpreter; with no `teyla` installed it records nothing. Codex and Hermes each
 before a hook runs (see "Approval" above); `teyla harness status` shows whether they have
 been approved. In Codex and Hermes, ask "what did the teyla line at the start say?" — the
 model saw it if the orientation reached it.
+
+## Hook parity
+
+One experience in every harness: a guard that Claude Code runs, Codex runs too. The table lists each hook of
+`plugin/hooks/hooks.json`; `tests/test_hook_parity_codex.py` fails when a Claude hook is neither wired in
+`harness._codex_hooks` nor named, with a reason, in its `INTENTIONAL` list.
+
+| hook | event, matcher | Claude Code | Codex | Grok |
+|---|---|---|---|---|
+| `session-start.sh` | SessionStart | yes | yes | yes |
+| `capture-correction.sh`, `capture-intent.sh`, `design-hint.sh` | UserPromptSubmit | yes | yes | yes |
+| `pre-tool-use.sh` (kill switch, run grants) | PreToolUse, all tools | yes | yes | yes |
+| `leak-guard.sh` | PreToolUse `Bash\|Read\|Edit\|Write\|MultiEdit` | yes | yes, `Bash\|apply_patch` | yes, `--grok` |
+| `platform-gate.sh` | PreToolUse `Edit\|Write\|MultiEdit\|NotebookEdit` | yes | yes, `apply_patch` | yes |
+| `machine-guard.sh` | PreToolUse `Bash` | yes | yes | yes, `--grok` |
+| `orchestrator-gate.sh` | PreToolUse `Bash` | yes | yes | no: not wired; Grok's `model` field was not verified |
+| `land-check.sh` | Stop, opt-in | yes | yes | no: not wired; its Stop contract was not verified |
+| `context-budget.sh` | SessionStart `compact`, UserPromptSubmit, PostToolUse, opt-in | yes | no: reads a Claude transcript | no |
+
+Codex tool names (docs `learn.chatgpt.com/docs/hooks`, 2026-11-27; the 0.172.0 binary's schema
+`pre-tool-use.command.input`, whose `tool_input` is free-form): a shell call is `Bash` with
+`tool_input.command`; the edit tool is `apply_patch`, whose payload also has `tool_input.command`, holding the
+patch text. The matcher is a regex on `tool_name` plus aliases, and `Edit` and `Write` alias to `apply_patch`.
+Codex has no read tool: a file is read through the shell, so the leak guard sees it as a `Bash` command.
+`teyla.hook_paths` takes the files from a patch (`*** Add File:`, `*** Update File:`, `*** Delete File:`,
+`*** Move to:`) and hands each to the same path checks Claude's `file_path` goes through. A patch body is file
+text, never a shell command, so the guard does not read it as a publication.
+
+Grok aliases `Read` to `read_file` and `Edit`, `Write` and `MultiEdit` to `search_replace` and `write`; its file
+tools name the file in `path` (`14-headless-mode.md`), which both guards read. Not run on a live Grok session.
+
+A new or changed Codex hook needs the one-time trust again (`Hooks need review` -> Trust, or `/hooks`);
+`teyla harness sync` says so and `teyla harness status` shows `PreToolUse untrusted` until then. Not verified:
+a live Codex session refusing a real `apply_patch` (Codex runs it inside its `exec` code tool in recent
+rollouts, and whether the PreToolUse hook fires for that nested call was not observed).
