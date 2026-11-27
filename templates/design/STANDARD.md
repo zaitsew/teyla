@@ -193,6 +193,14 @@ control it can tell from the code; the copy judge reads the rest.
 
 ## Part 4. The review process
 
+**Drawings first** (owner policy, 2026-11-27). A request for drawings, mockups, concepts or a
+screen redesign for review produces standalone static images first, never source. Show the full
+platform context (bottom navigation included when asked) and two variants of a new or reworked
+screen. Such a request does not authorize source edits, app builds, simulators, test suites or
+shipping; implementation needs a separate ask. Implementation then goes in one PR per screen or
+unit. The `design-hint` hook (`teyla.design_hint`) reminds Claude Code, Codex and Grok of this
+when a prompt reads as a design request.
+
 ### R18. A decision card: two or three options, recommended first, after a dossier
 Since 2026-11-10 · Scope: every new or reworked screen and every taste change · Check: review (the PR links the pick)
 

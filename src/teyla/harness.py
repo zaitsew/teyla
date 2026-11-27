@@ -65,8 +65,8 @@ from . import __version__, plugin_dir
 
 HOME = pathlib.Path.home()
 HOOKS_DIR = HOME / ".teyla" / "hooks"
-HOOK_SCRIPTS = ("session-start.sh", "capture-correction.sh", "capture-intent.sh", "land-check.sh", "machine-guard.sh")
-PLUGIN_SKILLS = ("harvest", "adoption-review", "wiki-pass", "review", "tidy")
+HOOK_SCRIPTS = ("session-start.sh", "capture-correction.sh", "capture-intent.sh", "design-hint.sh", "land-check.sh", "machine-guard.sh")
+PLUGIN_SKILLS = ("harvest", "adoption-review", "wiki-pass", "review", "tidy", "taste")
 CLI_SKILLS = {
     "teyla-rule": (
         "Write a one-sentence rule into this repo so a correction is never said twice: `.claude/rules/<slug>.md`, "
@@ -365,7 +365,8 @@ def _codex_hooks(existing: dict | None, land_check: bool | None = None) -> dict:
     wanted = {
         "SessionStart": [group(f"{HOOKS_DIR / 'session-start.sh'} --codex")],
         "UserPromptSubmit": [group(str(HOOKS_DIR / "capture-correction.sh")),
-                             group(f"{HOOKS_DIR / 'capture-intent.sh'} codex")],
+                             group(f"{HOOKS_DIR / 'capture-intent.sh'} codex"),
+                             group(str(HOOKS_DIR / "design-hint.sh"))],
         # The machine guard: PreToolUse on shell calls (`codex features list`: hooks stable; the
         # documented matcher name for a shell call is `Bash`, input `tool_input.command`).
         "PreToolUse": [group(str(HOOKS_DIR / "machine-guard.sh"), "Bash", 15)],
@@ -387,7 +388,8 @@ def _grok_hooks() -> dict:
     return {"hooks": {
         "SessionStart": [{"hooks": [{"type": "command", "command": str(HOOKS_DIR / "session-start.sh"), "timeout": 5}]}],
         "UserPromptSubmit": [{"hooks": [{"type": "command", "command": str(HOOKS_DIR / "capture-correction.sh"), "timeout": 5}]},
-                             {"hooks": [{"type": "command", "command": f"{HOOKS_DIR / 'capture-intent.sh'} grok", "timeout": 5}]}],
+                             {"hooks": [{"type": "command", "command": f"{HOOKS_DIR / 'capture-intent.sh'} grok", "timeout": 5}]},
+                             {"hooks": [{"type": "command", "command": str(HOOKS_DIR / "design-hint.sh"), "timeout": 5}]}],
         # Grok's `Bash` matcher aliases its run_terminal_command; a PreToolUse exit 2 denies, and
         # `--grok` also prints the full reason as JSON because Grok keeps only the first stderr line.
         "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": f"{HOOKS_DIR / 'machine-guard.sh'} --grok", "timeout": 15}]}],

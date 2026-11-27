@@ -226,6 +226,7 @@ PAYLOADS = {
     "session-start.sh": {"hook_event_name": "SessionStart", "source": "startup"},
     "capture-correction.sh": {"hook_event_name": "UserPromptSubmit", "prompt": "no, that's wrong, redo it"},
     "capture-intent.sh": {"hook_event_name": "UserPromptSubmit", "prompt": "I want " + "a long plan " * 60},
+    "design-hint.sh": {"hook_event_name": "UserPromptSubmit", "prompt": "mock up the home screen"},
     "pre-tool-use.sh": {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}},
     "machine-guard.sh": {"hook_event_name": "PreToolUse", "tool_name": "Bash",
                          "tool_input": {"command": "xcodebuild -scheme App build"}},
