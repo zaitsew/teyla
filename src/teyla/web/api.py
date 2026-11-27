@@ -142,11 +142,18 @@ class Job:
                 again, self.rerun = self.rerun, False
                 if not again:               # a stale count is dropped: the run that follows reads the settings as they are now
                     self.data, self.at, self.error = data, _now(), None
-                self.running = again
+                self.running = again or self.on_done is not None   # stays set through `on_done`: callbacks never overlap
             if again:
                 continue
             if self.on_done:
-                self.on_done()
+                try:
+                    self.on_done()
+                finally:
+                    with self.lock:
+                        again, self.rerun = self.rerun, False
+                        self.running = again
+                if again:
+                    continue
             return
 
     def patch(self, fn) -> None:
