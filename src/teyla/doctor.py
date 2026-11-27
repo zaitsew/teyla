@@ -648,10 +648,14 @@ def parity_checks() -> list[dict]:
     g = parity.gaps(t)
     if not g:
         return [_check("OK", "parity", "Claude Code and Codex: every hook present, Codex trusts them, policy and skills current")]
-    names = ", ".join(f"{r['capability'].split(' (')[0].removeprefix('hook ')}: {r['codex'] if r['codex'] != 'ok' else r['claude-code']}"
-                      for r in g)
+    by_state: dict[str, list[str]] = {}
+    for r in g:
+        name = r["capability"].split(" (")[0].removeprefix("hook ").replace("hook scripts in ~/.teyla/hooks", "hook scripts")
+        by_state.setdefault(r["codex"] if r["codex"] != "ok" else r["claude-code"], []).append(
+            f"{name} ({', '.join(t['skills_missing'])})" if name.startswith("skills") and t.get("skills_missing") else name)
+    names = "; ".join(f"{state}: {', '.join(v)}" for state, v in by_state.items())
     fixes = list(dict.fromkeys(r["fix"] for r in g))
-    return [_check("WARN", "parity", f"Codex lags Claude Code — {names}", "; ".join(fixes) + "   (teyla harness parity: the table)")]
+    return [_check("WARN", "parity", f"Codex lags Claude Code — {names}", " ; ".join(fixes) + "   (teyla harness parity: the table)")]
 
 
 def hook_checks(cfg: dict) -> list[dict]:

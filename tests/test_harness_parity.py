@@ -120,7 +120,8 @@ def test_missing_skill_and_stale_policy_are_gaps(home):
     (home / ".codex" / "skills" / "teyla-taste" / "SKILL.md").unlink()
     t = hp.table(home)
     assert cell(t, "skills") == "missing"
-    assert "teyla-taste" in [r for r in t["rows"] if r["capability"].startswith("skills")][0]["fix"]
+    assert t["skills_missing"] == ["teyla-taste"]
+    assert [r for r in t["rows"] if r["capability"].startswith("skills")][0]["fix"] == "teyla harness sync"
     assert cell(t, "policy text") in ("ok", "stale")
 
 

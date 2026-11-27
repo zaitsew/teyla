@@ -189,14 +189,14 @@ def table(home: pathlib.Path | None = None) -> dict:
     ok, bad = _skills(codex) if codex_present else ([], [])
     add(f"skills ({len(H.PLUGIN_SKILLS)} plugin skills)", "absent" if not claude_present else ("ok" if pv else "no plugin"),
         "absent" if not codex_present else ("ok" if not bad else "missing"),
-        f"teyla harness sync   (missing or stale: {', '.join(bad)})" if bad else None)
+        "teyla harness sync" if bad else None)
     drift = policy.drift("codex") if codex_present else None
     claude_policy = (home / ".claude" / "CLAUDE.md").exists() if claude_present else None
     add("policy text (POLICY.md + owner rules)",
         "absent" if not claude_present else ("ok" if claude_policy else "missing"),
         "absent" if not codex_present else ("stale" if drift else "ok"),
         drift[1] if drift else None)
-    return dict(rows=rows, claude_present=claude_present, codex_present=codex_present,
+    return dict(rows=rows, skills_missing=bad, claude_present=claude_present, codex_present=codex_present,
                 drift=drift[0] if drift else None)
 
 
