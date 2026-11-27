@@ -124,3 +124,10 @@ def test_hint_on_a_branch_that_differs_only(repo, capsys):
 
 def test_help_documents_blocking_rules():
     assert "blocking" in ux_check.DIFF_HELP and "font, colour or spacing" in ux_check.DIFF_HELP
+
+
+def test_non_ascii_file_name_is_scanned(repo, capsys):
+    (repo / "Sources/Écran.swift").write_text(view("        VStack {}.padding(12)"))
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "accent")
+    assert run(repo, "main") == 1

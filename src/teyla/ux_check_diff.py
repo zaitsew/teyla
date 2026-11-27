@@ -36,7 +36,7 @@ BASE_CANDIDATES = ("origin/HEAD", "origin/main", "origin/master", "main", "maste
 
 def _git(root: pathlib.Path, *args: str) -> str | None:
     try:
-        r = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, timeout=60)
+        r = subprocess.run(["git", "-c", "core.quotepath=off", "-C", str(root), *args], capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.SubprocessError):
         return None
     return r.stdout if r.returncode == 0 else None
