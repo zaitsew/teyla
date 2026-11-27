@@ -23,7 +23,7 @@ UI_NOUNS = (r"screens?", r"ui", r"ux", r"ios", r"android", r"app", r"version", r
 
 # Words that say the owner also wants the work implemented. Checked only when a design request matched.
 IMPLEMENT = (
-    r"implement\w*", r"ship(?:ping)?", r"testflight", r"swiftui", r"build (?:it|this|the app|the screens?|a prototype)",
+    r"implement\w*", r"ship(?:ping)?", r"testflight", r"build (?:it|this|the app|the screens?|a prototype)",
     r"code (?:it|this|them) up", r"make it real", r"put (?:it|this) into (?:the )?app",
     # Russian: implement, build it, start development, ship, put into the app
     r"реализуй\w*", r"имплементируй\w*", r"внедри\w*", r"запусти в разработку", r"собери приложение",

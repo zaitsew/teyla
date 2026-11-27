@@ -22,6 +22,8 @@ DESIGN = [
     "Сделай макет главной и редизайн онбординга",
     "dibuja la pantalla de inicio",
     "Necesito un boceto del flujo",
+    "Draw a mockup of the SwiftUI screen for review",
+    "draw a full iOS version with bottom nav",
 ]
 IMPLEMENT = [
     "Redesign the home screen and implement it, then ship to TestFlight",
