@@ -77,7 +77,7 @@ if [ "$mode" != none ] && [ -x ./check.sh ]; then
     echo "pre-push: running ./check.sh (TEYLA_PREPUSH_TESTS=0 skips it, logged)" >&2
     # git's own variables must not leak into the tests' scratch repositories
     env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_PREFIX ./check.sh </dev/null >&2 || {
-      echo "pre-push: ./check.sh failed; fix the failures above before pushing" >&2
+      echo "pre-push: ./check.sh failed; fix the failures above before pushing (failing test ids are listed just above; full pytest log: ${TEYLA_HOME:-$HOME/.teyla}/check-last.log)" >&2
       exit 1
     }
   fi
