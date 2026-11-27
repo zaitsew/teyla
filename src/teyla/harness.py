@@ -832,6 +832,11 @@ def cmd_harness(args):
     if args.action == "verify":
         from . import health
         return health.cmd_verify(args)
+    if args.action == "parity":
+        from . import harness_parity as parity
+        t = parity.table()
+        print(json.dumps(t, indent=2) if getattr(args, "json", False) else parity.render(t))
+        return 1 if parity.gaps(t) else 0
     if args.action == "status":
         print(render_status(status()))
         if _disabled():
@@ -844,9 +849,9 @@ def cmd_harness(args):
 
 def register(sp):
     q = sp.add_parser("harness", help="the plugin's skills, hooks and policy in Cursor, Codex, Grok and Hermes; "
-                                      "`verify` checks each can do work now")
+                                      "`verify` checks each can do work now; `parity` is the Claude Code x Codex table, one fix per gap")
     q.set_defaults(fn=cmd_harness)
-    q.add_argument("action", choices=["status", "sync", "verify"])
+    q.add_argument("action", choices=["status", "sync", "verify", "parity"])
     q.add_argument("--dry", action="store_true")
     q.add_argument("--live", action="store_true",
                    help="verify: also send one line through each harness headless (spends a few tokens; never run by routines)")
