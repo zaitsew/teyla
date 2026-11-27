@@ -30,14 +30,14 @@ The agent reads [AGENTS.md](AGENTS.md), installs Teyla and shows what your sessi
 You need a Mac and [uv](https://docs.astral.sh/uv/). It downloads Python 3.12 (about 25 MB) if the Mac has no Python 3.11 to 3.13. Short on disk? `teyla storage` shows what holds it ([Low on disk](docs/LOW-ON-DISK.md)).
 
 ```bash
-uv tool install --python 3.12 git+https://github.com/zaitsew/teyla@v0.61.1
+uv tool install --python 3.12 git+https://github.com/zaitsew/teyla@v0.62.0
 teyla start          # the diagnosis, the checklist of packs, then each change: yes, no or explain
 ```
 
 Try it without installing. It changes no setting of your tools and keeps its counts in `~/.teyla`:
 
 ```bash
-uvx --python 3.12 --from git+https://github.com/zaitsew/teyla@v0.61.1 teyla start
+uvx --python 3.12 --from git+https://github.com/zaitsew/teyla@v0.62.0 teyla start
 ```
 
 ## Pick your packs
