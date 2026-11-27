@@ -238,6 +238,8 @@ model saw it if the orientation reached it.
 
 ## Hook parity
 
+`teyla harness parity` checks the machine against this table: per hook, is it in `~/.codex/hooks.json`, and does Codex's `[hooks.state]` table hold a `trusted_hash` that matches (the hash `harness status` counts). Gaps print with their fix, and `teyla doctor` shows one `parity` line.
+
 One experience in every harness: a guard that Claude Code runs, Codex runs too. The table lists each hook of
 `plugin/hooks/hooks.json`; `tests/test_hook_parity_codex.py` fails when a Claude hook is neither wired in
 `harness._codex_hooks` nor named, with a reason, in its `INTENTIONAL` list.
