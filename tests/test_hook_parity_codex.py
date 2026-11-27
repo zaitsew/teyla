@@ -35,3 +35,9 @@ def test_the_allowlist_holds_no_stale_entries():
     codex = _scripts(harness._codex_hooks(None, land_check=True)["hooks"])
     assert not (set(INTENTIONAL) - claude), "INTENTIONAL names a hook the Claude plugin no longer runs"
     assert not (set(INTENTIONAL) & codex), "INTENTIONAL names a hook Codex already runs: delete the entry"
+
+
+def test_every_script_wired_for_codex_or_grok_is_installed_by_sync():
+    wired = {s for _, s in _scripts(harness._codex_hooks(None, land_check=True)["hooks"])}
+    wired |= {s for _, s in _scripts(harness._grok_hooks()["hooks"])}
+    assert wired <= set(harness.HOOK_SCRIPTS), sorted(wired - set(harness.HOOK_SCRIPTS))

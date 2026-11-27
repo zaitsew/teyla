@@ -72,7 +72,8 @@ from . import __version__, plugin_dir
 HOME = pathlib.Path.home()
 HOOKS_DIR = HOME / ".teyla" / "hooks"
 HOOK_SCRIPTS = ("session-start.sh", "capture-correction.sh", "capture-intent.sh", "design-hint.sh", "land-check.sh",
-                "machine-guard.sh", "orchestrator-gate.sh", "pr-size-gate.sh")
+                "machine-guard.sh", "orchestrator-gate.sh", "pr-size-gate.sh", "pre-tool-use.sh", "leak-guard.sh",
+                "platform-gate.sh")
 PLUGIN_SKILLS = ("harvest", "adoption-review", "wiki-pass", "review", "tidy", "taste")
 CLI_SKILLS = {
     "teyla-rule": (
