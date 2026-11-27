@@ -213,7 +213,7 @@ screenshot can still be wrong in the hand. The cycle is in `templates/design/CYC
 5. **Apply only the picked option.** No "while I was there" additions.
 6. **Screenshots in the PR**, before and after, for each changed screen, in light and dark.
 7. **A cut list**: what was removed, one line each. An empty cut list is a PR that added things.
-8. Run `teyla ux check` before opening the PR.
+8. Run `teyla ux check --diff` before opening the PR; it must exit 0 (the repo-wide `teyla ux check` is debt, not a gate).
 
 ### R20. Figma is a snapshot and a sketchpad, never the spec
 Since 2026-11-06 · Scope: every product with a UI · Check: review (no PR cites Figma as the reason a screen is right)
@@ -278,7 +278,7 @@ Answer each with yes or no. Fix every no, or say why in the PR.
 7. Are there about four tap targets or fewer, with the rest behind a menu, a sheet or a detail screen?
 8. Are there zero raw font sizes, colours and spacing values in my diff?
 9. Does every button start with a verb, in 3 words or fewer, with no "Please", no "!" and no "oops"?
-10. Did I run `teyla ux check`, attach before and after screenshots, and show a decision card of two or three options, recommended first?
+10. Did I run `teyla ux check --diff` (exit 0), attach before and after screenshots, and show a decision card of two or three options, recommended first?
 
 ## What the audit cannot see
 

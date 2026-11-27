@@ -155,6 +155,6 @@ teyla uninstall --dry      # list what Teyla would remove: links, hooks, jobs
 teyla uninstall && uv tool uninstall teyla
 ```
 
-<sub>Works on my machine: one Mac, no server.</sub>
+<img src=".github/egg/load.svg" width="420" alt="">
 
 <!-- teyla:reviewed 2026-11-23 -->

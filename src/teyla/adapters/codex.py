@@ -40,7 +40,7 @@ DEFAULT_ARCHIVE_ROOT = os.path.expanduser("~/.codex/archived_sessions")
 DEFAULT_INDEX = os.path.expanduser("~/.codex/session_index.jsonl")
 
 # Bump when `parse` changes a result: the parsed-session cache is keyed on it.
-PARSER_VERSION = 1
+PARSER_VERSION = 2
 
 
 BATCH_SOURCES = ("exec",)
@@ -80,6 +80,24 @@ def strip_injected(txt: str) -> str:
 def is_injected(txt: str) -> bool:
     """A user-role message made only of harness-written `<tag>...</tag>` blocks."""
     return txt.startswith("<environment_context>") or not strip_injected(txt)
+
+
+DEFAULT_AGENTS_DIR = os.path.expanduser("~/.codex/agents")
+
+
+def role_model(role: str | None, agents_dir: str | None = None) -> str | None:
+    """The `model =` of ~/.codex/agents/<role>.toml: what a spawned agent of that role runs when its
+    rollout names no model. None when there is no such file or it names none."""
+    agents_dir = DEFAULT_AGENTS_DIR if agents_dir is None else agents_dir
+    if not role or not re.fullmatch(r"[0-9A-Za-z_-]+", role):
+        return None
+    try:
+        with open(os.path.join(agents_dir, role + ".toml"), "rb") as fh:
+            import tomllib
+            m = tomllib.load(fh).get("model")
+    except (OSError, ValueError):
+        return None
+    return m if isinstance(m, str) and m else None
 
 
 def _load_titles(index_path: str) -> dict:
@@ -224,9 +242,20 @@ def parse(f: str, titles: dict | None = None) -> Session | None:
                 continue
 
             if t == "session_meta":
-                sid = payload.get("session_id") or payload.get("id")
+                # A spawned agent's session_id is its parent's; its own id is `id`. Key by the own id.
+                sid = payload.get("id") or payload.get("session_id")
                 if sid:
                     s.sid = sid
+                parent = payload.get("parent_thread_id")
+                spawn = ((payload.get("source") or {}).get("subagent") if isinstance(payload.get("source"), dict) else None)
+                if not parent and isinstance(spawn, dict):
+                    parent = (spawn.get("thread_spawn") or {}).get("parent_thread_id")
+                if not parent and payload.get("session_id") and payload.get("id") and payload["session_id"] != payload["id"]:
+                    parent = payload["session_id"]
+                if parent and parent != s.sid:
+                    s.parent_sid = str(parent)
+                    s.agent_role = payload.get("agent_role") or None
+                    s.agent_nickname = payload.get("agent_nickname") or None
                 cwd = payload.get("cwd")
                 if cwd:
                     s.cwd = cwd
@@ -292,7 +321,8 @@ def parse(f: str, titles: dict | None = None) -> Session | None:
                                 args = json.loads(payload.get("arguments") or "{}")
                             except Exception:
                                 pass
-                            s.agents.append(AgentCall(args.get("model"), "spawn_agent", args.get("task_name")))
+                            s.agents.append(AgentCall(args.get("model"), "spawn_agent", args.get("task_name"),
+                                                  args.get("agent_type")))
                         parsed = parse_mcp_tool(name)
                         call_id = payload.get("call_id")
                         if parsed and call_id:
