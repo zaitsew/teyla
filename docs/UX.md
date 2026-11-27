@@ -34,7 +34,17 @@ teyla ux check                  # the git repo of the current directory
 teyla ux check atlas cellar      # repos under code_root, or paths
 teyla ux check --all --json     # every repo under code_root
 teyla ux check --strict         # exit 1 when a repo has a FIX
+teyla ux check --diff           # before a UX PR: only what this branch adds; exit 1 on a violation
+teyla ux check app --diff origin/main   # an explicit base
 ```
+
+**Before a UX PR run `--diff`, not the repo-wide check.** The repo-wide verdict is debt: it is the
+same before and after a PR. `--diff [BASE]` (default: the merge-base with `origin/HEAD`, else
+`origin/main`) lists each added line that breaks a rule as `file:line`, then one line of repo debt
+("1331 spacing literals, unchanged by this diff"). Blocking, exit 1: a font size, colour or padding
+number typed into a view outside the token files. Warning, exit 0: a hand-written animation curve.
+Copy rules and crowded screens stay repo-wide. Exit 2 on a bad base. `--json` prints the findings.
+Without a flag, on a branch that differs from its base, the check ends with a hint to use `--diff`.
 
 It reads files only, with no network, and takes a second or two. It covers SwiftUI, Jetpack
 Compose and web code (tsx, jsx, css, scss, vue, svelte).
