@@ -479,6 +479,10 @@ def checks(refresh_update: bool = False, scan_repos: bool = True) -> list[dict]:
                               + (", hooks wired" if row["hooks"] else ", no hook mechanism")
                               + (", approved" if row.get("trust") else "")))
 
+    # --- Claude Code x Codex parity: per hook, with trust ---------------------------------
+    if "codex" not in off:
+        out += parity_checks()
+
     # --- routines ----------------------------------------------------------------
     if sys.platform == "darwin":
         for label, plist, wrapper in ((routine_install.DAILY_LABEL, routine_install.DAILY_PLIST_PATH, routine_install.DAILY_WRAPPER_PATH),
@@ -629,6 +633,29 @@ def is_machine_fact(c: dict) -> bool:
 def ordered(cs: list[dict]) -> list[dict]:
     """Set-up items first, machine facts last; each group keeps the order it was checked in."""
     return [c for c in cs if not is_machine_fact(c)] + [c for c in cs if is_machine_fact(c)]
+
+
+def parity_checks() -> list[dict]:
+    """One line: every Teyla hook Claude Code runs is also in Codex and trusted there, or which are not.
+    `teyla harness parity` prints the whole table."""
+    from . import harness_parity as parity
+    try:
+        t = parity.table()
+    except Exception as e:  # noqa: BLE001 — a doctor line never crashes doctor
+        return [_check("INFO", "parity", f"not checked ({e.__class__.__name__})")]
+    if not (t["claude_present"] and t["codex_present"]):
+        return []
+    g = parity.gaps(t)
+    if not g:
+        return [_check("OK", "parity", "Claude Code and Codex: every hook present, Codex trusts them, policy and skills current")]
+    by_state: dict[str, list[str]] = {}
+    for r in g:
+        name = r["capability"].split(" (")[0].removeprefix("hook ").replace("hook scripts in ~/.teyla/hooks", "hook scripts")
+        by_state.setdefault(r["codex"] if r["codex"] != "ok" else r["claude-code"], []).append(
+            f"{name} ({', '.join(t['skills_missing'])})" if name.startswith("skills") and t.get("skills_missing") else name)
+    names = "; ".join(f"{state}: {', '.join(v)}" for state, v in by_state.items())
+    fixes = list(dict.fromkeys(r["fix"] for r in g))
+    return [_check("WARN", "parity", f"Codex lags Claude Code — {names}", " ; ".join(fixes) + "   (teyla harness parity: the table)")]
 
 
 def hook_checks(cfg: dict) -> list[dict]:
