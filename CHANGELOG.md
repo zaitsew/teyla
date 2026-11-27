@@ -3,6 +3,8 @@
 ## Unreleased
 
 - Design requests: a new `design-hint` UserPromptSubmit hook (Claude Code plugin, Codex, Grok) adds up to three lines of context when a prompt asks for drawings, mockups, concepts or a redesign (English, Russian, Spanish): static frames first, two variants, full device context, no builds, simulators or tests unless asked. When the prompt also asks to implement, it says implementation is authorized, one PR per screen. `teyla harness sync` now installs the `taste` skill as `teyla-taste` in Codex, Cursor, Grok and Hermes. `templates/design/STANDARD.md` states the drawings-first rule.
+- **Codex sub-agents keep their own id.** A spawned Codex agent was keyed by its parent's id, so `teyla spend --session` printed one id many times. Each rollout is now keyed by its own id and records its parent, role and nickname. `teyla spend --session <id or prefix>` resolves to the orchestrator and prints one row per worker (role, nickname, model, cost) and the split "orchestrator $X (N%), workers $Y"; the JSON gains `orchestrator_usd`, `workers_usd`, `workers_share` and `workers`. `teyla lanes` lists spawned Codex agents as `codex/<role>` rows; a rollout with no model takes it from `~/.codex/agents/<role>.toml`.
+
 - Tests: the web test of offer O6 no longer clones Teyla from github.com. The clone took longer than the test's client waits, so the gate failed, and the abandoned request thread printed into the next test and wrote a change and a diagnosis into the real `~/.teyla`. A test that reaches a remote `git clone` now fails, and the web fixture joins its server's threads. The session-start hook's sync test waits for the line it checks, not for whichever background command writes first.
 
 ## 0.61.1 — 2026-11-24

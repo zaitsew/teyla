@@ -176,7 +176,8 @@ def session_rows(days: int = 7, sessions=None, grok_rows=None) -> list[dict]:
             harness=s.harness, sid=s.sid, project=_project(s.cwd), cwd=s.cwd, first=s.first, last=s.last,
             usd=sum(by_model.values()), by_model=by_model, sub_usd=sum(sub.values()), top_tier_sub_saving=saving,
             reread_usd=reread, loop_usd=sum(_usd(m, u) for m, u in s.loop_usage.items()),
-            inherited_agents=sum(1 for a in s.agents if not a.model), agents=len(s.agents),
+            inherited_agents=sum(1 for a in s.agents if not a.model and not a.role), agents=len(s.agents),
+            parent_sid=s.parent_sid, role=s.agent_role, nickname=s.agent_nickname,
             prs=s.pr_links, batch=s.batch, repos=sorted(s.touched_repos, key=lambda r: -s.touched_repos[r])[:5],
             **_day_fields(s),
         ))
@@ -818,22 +819,60 @@ def find_session(rows: list[dict], key: str) -> tuple[list[dict], str | None]:
     return hit, None
 
 
-def session_detail(r: dict) -> dict:
+def resolve_session(rows: list[dict], key: str) -> tuple[list[dict], dict | None, list[dict]]:
+    """(roots, orchestrator row, worker rows). A prefix that matches one Codex orchestrator and its
+    spawned agents names one session: a worker resolves to its parent. `roots` has more than one id
+    only when the prefix names unrelated sessions."""
+    hit, _ = find_session(rows, key)
+    roots = sorted({r.get("parent_sid") or r["sid"] for r in hit})
+    if len(roots) != 1:
+        return [r for r in hit if not r.get("parent_sid")] or hit, None, []
+    root = roots[0]
+    top = next((r for r in rows if r["sid"] == root), None)
+    workers = sorted((r for r in rows if r.get("parent_sid") == root), key=lambda r: -r["usd"])
+    return [top or hit[0]], top, workers
+
+
+def _worker_model(r: dict) -> str:
+    from .adapters import codex
+    top = max(((m, v) for m, v in r["by_model"].items() if m != "?"), key=lambda kv: kv[1], default=(None, 0))[0]
+    return top or codex.role_model(r.get("role")) or "?"
+
+
+def session_detail(r: dict, workers: list[dict] | None = None) -> dict:
     from .pricing import family
-    by_day = {}
-    for d, usd in sorted(_row_day_usd(r).items()):
-        by_day[d] = round(usd, 4)
+    workers = workers or []
+    by_day = defaultdict(float)
+    for x in [r] + workers:
+        for d, usd in _row_day_usd(x).items():
+            by_day[d] += usd
+    by_day = {d: round(v, 4) for d, v in sorted(by_day.items())}
+    by_model = defaultdict(float)
+    for x in [r] + workers:
+        for m, v in x["by_model"].items():
+            by_model[m] += v
     sub_family = defaultdict(float)
     for mm in (r.get("sub_day_model_usd") or {}).values():
         for m, v in mm.items():
             sub_family[family(m)] += v
-    return dict(
+    own = r["usd"]
+    wk = sum(w["usd"] for w in workers)
+    d = dict(
         id=r["sid"], harness=r["harness"], project=r["project"], cwd=r["cwd"], first=r["first"], last=r["last"],
-        total_usd=r["usd"], session_usd=r["usd"] - r["sub_usd"], subagents_usd=r["sub_usd"],
-        by_model=dict(sorted(r["by_model"].items(), key=lambda kv: -kv[1])), by_day=by_day,
-        subagent_count=len(r.get("sub_calls") or []),
+        total_usd=own + wk, session_usd=own - r["sub_usd"], subagents_usd=r["sub_usd"] + wk,
+        by_model=dict(sorted(by_model.items(), key=lambda kv: -kv[1])), by_day=by_day,
+        subagent_count=len(r.get("sub_calls") or []) + len(workers),
         subagent_by_family={f: round(v, 4) for f, v in sorted(sub_family.items(), key=lambda kv: -kv[1])},
         prs=r.get("prs") or 0, note=LIST_PRICE_NOTE)
+    if workers:
+        for w in workers:
+            for m, v in w["by_model"].items():
+                sub_family[family(m)] += v
+        d["subagent_by_family"] = {f: round(v, 4) for f, v in sorted(sub_family.items(), key=lambda kv: -kv[1])}
+        d.update(orchestrator_usd=own, workers_usd=wk, workers_share=(wk / (own + wk)) if own + wk else 0.0,
+                 workers=[dict(id=w["sid"], role=w.get("role"), nickname=w.get("nickname"), model=_worker_model(w),
+                               usd=w["usd"]) for w in workers])
+    return d
 
 
 def render_session(d: dict) -> str:
@@ -844,14 +883,24 @@ def render_session(d: dict) -> str:
          "by local day: " + (", ".join(f"{k} {_money(v)}" for k, v in d["by_day"].items()) or "-"),
          f"subagents: {d['subagent_count']} calls" + (", " + ", ".join(f"{f} {_money(v)}" for f, v in d["subagent_by_family"].items())
                                                     if d["subagent_by_family"] else ""),
-         f"PR links: {d['prs']}" if d["prs"] else "PR links: none known", "", d["note"]]
+         f"PR links: {d['prs']}" if d["prs"] else "PR links: none known"]
+    if d.get("workers"):
+        own, wk = d["orchestrator_usd"], d["workers_usd"]
+        L += ["", f"  {'row':<13} {'role':<8} {'nickname':<10} {'model':<16} {'cost':>9}",
+              f"  {d['id'][:13]:<13} {'orchestrator':<8} {'':<10} {'':<16} {_money(own):>9}"]
+        for w in d["workers"]:
+            L.append(f"  {w['id'][:13]:<13} {(w['role'] or '-')[:8]:<8} {(w['nickname'] or '-')[:10]:<10} "
+                     f"{w['model'][:16]:<16} {_money(w['usd']):>9}")
+        L += ["", f"orchestrator {_money(own)} ({100 * (1 - d['workers_share']):.0f}%), workers {_money(wk)}"
+                  f" ({100 * d['workers_share']:.0f}%)"]
+    L += ["", d["note"]]
     return "\n".join(L)
 
 
 def cmd_session(args) -> int:
     key = args.session.strip()
     rows = session_rows(max(1, args.days))
-    hit, _ = find_session(rows, key)
+    hit, top, workers = resolve_session(rows, key) if key else ([], None, [])
     if not key or not hit:
         print(f"no session with an id starting {key!r} active in the last {args.days} days (try --days N)", file=sys.stderr)
         return 1
@@ -860,7 +909,7 @@ def cmd_session(args) -> int:
         for r in hit:
             print(f"  {r['sid']}  {r['harness']:<11} {_money(r['usd']):>8}  {r['project']}  {r['last']}", file=sys.stderr)
         return 2
-    d = session_detail(hit[0])
+    d = session_detail(hit[0], workers)
     print(json.dumps(d, indent=1, default=str) if args.json else render_session(d))
     return 0
 

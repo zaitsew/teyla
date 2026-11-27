@@ -143,6 +143,37 @@ def scan(days: int | None = 7, project: str | None = None, root: str | None = No
     return units
 
 
+def codex_units(days: int | None, project: str | None, codex_root: str | None, now: _dt.datetime,
+                agents_dir: str | None = None) -> list[dict]:
+    """One unit per spawned Codex agent: its type is `codex/<role>`, its model the one its turns ran
+    on, or the role's model from ~/.codex/agents/<role>.toml when the rollout names none. A rollout
+    keeps one cumulative token count, not one per message, so the window is by the rollout's last
+    local day, and the peak context is not known (0)."""
+    from .adapters import codex, local_day
+    from .spend import _usd
+    window = set(costing.window(days, now.astimezone().date())) if days else None
+    since = (now - _dt.timedelta(days=days + 1)).timestamp() if days else None
+    try:
+        sessions = codex.load(root=codex_root, archive_root="", since=since)
+    except FileNotFoundError:
+        return []
+    units = []
+    for s in sessions:
+        if not s.parent_sid or not s.usage:
+            continue
+        if window is not None and local_day(s.last or s.first) not in window:
+            continue
+        if project and project.lower() not in (s.cwd or "").lower():
+            continue
+        by_model = {m: _usd(m, u) for m, u in s.usage.items()}
+        named = {m: v for m, v in by_model.items() if m != "?"}
+        model = max(named, key=named.get) if named else (codex.role_model(s.agent_role, agents_dir) or "?")
+        units.append(dict(agent=s.sid, type=f"codex/{s.agent_role or '(untyped)'}", turns=s.assistant_turns, peak=0,
+                          usd=sum(by_model.values()), model=model, first=s.first, tokens=[], usage={}, explicit=None,
+                          writes=False, unpriced={}, project=s.project, nickname=s.agent_nickname, parent=s.parent_sid))
+    return units
+
+
 def match_reviews(units: list[dict], ledger: dict) -> None:
     """Set `matched` (reviews of any round) and `p1` (first-round P1s, one count per reviewed commit)
     on every unit, in place."""
@@ -190,9 +221,15 @@ def summarize(units: list[dict], with_ledger: bool) -> list[dict]:
 
 
 def report(days: int | None = 7, project: str | None = None, root: str | None = None,
-           ledger: pathlib.Path | None = None, now: _dt.datetime | None = None) -> dict:
+           ledger: pathlib.Path | None = None, now: _dt.datetime | None = None,
+           codex_root: str | None = None, agents_dir: str | None = None) -> dict:
+    """Claude Code subagent files under `root`, plus spawned Codex agents under `codex_root`. With
+    neither given both read their default stores; a caller that moves one root leaves the other
+    store out unless it names it."""
     from . import reviews
     units = scan(days, project, root, now)
+    if codex_root is not None or root is None:
+        units += codex_units(days, project, codex_root, now or _dt.datetime.now(_dt.timezone.utc), agents_dir)
     path = reviews.ledger_path() if ledger is None else ledger
     led = reviews.load_ledger(path)
     if led is not None:
@@ -225,7 +262,7 @@ def render(rep: dict) -> str:
     for r in rep["rows"]:
         led = rep["ledger"] is not None
         L.append(f"{r['type'][:22]:<22} {r['model'][:20]:<20} {r['units']:>5} {r['median_turns']:>6.0f} "
-                 f"{r['median_peak'] / 1000:>8.0f}k {_money(r['median_usd']):>8} {_money(r['total_usd']):>9} "
+                 f"{(format(r['median_peak'] / 1000, '.0f') + 'k') if r['median_peak'] else '-':>9} {_money(r['median_usd']):>8} {_money(r['total_usd']):>9} "
                  f"{(r['matched'] if led else '-'):>8} "
                  f"{('-' if not led or r['p1_per_unit'] is None else format(r['p1_per_unit'], '.2f')):>8} "
                  f"{(r['units_with_p1'] if led else '-'):>8}")
