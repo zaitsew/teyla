@@ -30,10 +30,15 @@ def _env(tmp_path, monkeypatch):
 
 
 def git(repo, *args, when=None):
-    env = {**os.environ, **ENV}
+    # Nothing of the caller's git state may reach a fixture repo: a pre-push hook runs this suite, and a stray GIT_*
+    # variable, a global config or a template hook once broke the `git merge` below only inside the hook.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env.update(ENV, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1", GIT_EDITOR="true", GIT_TERMINAL_PROMPT="0")
     if when:
         env.update(GIT_AUTHOR_DATE=when, GIT_COMMITTER_DATE=when)
-    subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, env=env)
+    pins = ["-c", "merge.ff=true", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false"]
+    p = subprocess.run(["git", "-C", str(repo), *pins, *args], capture_output=True, text=True, env=env)
+    assert p.returncode == 0, f"git {' '.join(args)} failed: {p.stderr or p.stdout}"
 
 
 def write(repo, rel, text="x"):
