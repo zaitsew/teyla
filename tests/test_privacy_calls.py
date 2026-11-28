@@ -57,6 +57,7 @@ ALLOWED = {
     "review_asc.py": {24, 56},
     "ux_judge.py": {25, 57},
     "scout_design.py": {26},
+    "watch.py": {62},
     "deps.py": {32},
     "leak_guard.py": {60},
     "leak_published.py": {35},

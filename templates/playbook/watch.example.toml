@@ -1,0 +1,11 @@
+[product]
+name = "example"
+storefronts = ["us", "gb", "es", "ru"]
+
+[[watch]]
+name = "Structured"
+ring = "job"                 # job (at most 8) | craft (at most 4) | platform
+app_store_id = 1499198946    # optional; numeric App Store id
+url = "https://structured.app" # teardown lanes only; never fetched weekly
+why = "Same job: one timeline for the day."
+added = "2026-11-28"
