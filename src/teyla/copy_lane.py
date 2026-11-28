@@ -367,7 +367,9 @@ def language_payload(spec: dict, lang: str) -> dict:
                      else dict(text=spec["design_voice"] or "(none: write plainly, in short sentences)", banned=[], preferred=[])),
         rules=RULES,
         rows=[dict(key=r["key"], control=r["control"], state=r["state"], budget=r["budget"], current=r["current"].get(lang) or "")
-              for r in spec["rows"]])
+              for r in spec["rows"]],
+        **({"patterns": dict(cards=spec["patterns"]["text"], note="Copy the mechanism, never the brand or its words; "
+                             "each card's refuse line is a ban.")} if (spec.get("patterns") or {}).get("ids") else {}))
 
 
 def writer_command(model: str) -> list[str]:

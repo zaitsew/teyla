@@ -106,3 +106,12 @@ def test_an_old_item_without_the_field_still_loads(env):
     it = tg.master(store)
     assert "playbook_cards" not in growth.Store().get(it["id"])
     assert growth.render_item(growth.Store().get(it["id"]), full=True)
+
+
+def test_copy_write_payload_carries_the_patterns(repo, library, capsys):
+    put(library, live("flow-empty-next-step", "flow", "recipe.list"))
+    spec = tcl.cl.parse_spec(tcl.run(["brief", str(repo), "recipe.list"], capsys)[1])
+    payload = tcl.cl.language_payload(spec, "en")
+    assert "[flow-empty-next-step]" in payload["patterns"]["cards"] and "refuse" in payload["patterns"]["note"]
+    spec["patterns"] = {"ids": [], "text": ""}
+    assert "patterns" not in tcl.cl.language_payload(spec, "en")
