@@ -275,7 +275,7 @@ def run(products, week, dry=False):
                 available = [q for q in candidates if q["text"] not in seen]
                 if not available:
                     break
-                q = min(available, key=lambda q: (q["rating"] not in (2, 3, 4), q["rating"] in ratings))
+                q = min(available, key=lambda q: (q["rating"] in ratings, q["rating"] not in (2, 3, 4)))
                 selected.append(q)
                 seen.add(q["text"])
                 ratings.add(q["rating"])

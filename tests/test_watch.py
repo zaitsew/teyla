@@ -154,3 +154,18 @@ def test_subset_keeps_other_products_and_invalid_responses(setup):
         watch.reviews({"feed": None}, "us")
     with pytest.raises(ValueError, match="review entries"):
         watch.reviews({"feed": {"entry": None}}, "us")
+
+
+def test_quote_sample_spans_ratings_before_repeating_one(setup, monkeypatch):
+    _, products, _, _ = setup
+    feed = {"feed": {"entry": [
+        {"im:rating": {"label": str(rating)}, "content": {"label":
+         f"The timeline helps me plan each day and keep every task in order: sample {index}."}}
+        for index, rating in enumerate((3, 3, 3, 5))
+    ]}}
+    listing = json.loads((FIXTURES / "week-one.json").read_text())
+    monkeypatch.setattr(watch, "_fetch", lambda url: feed if "/rss/" in url else listing)
+    report = watch.run(products, "2026-W48")
+    quotes = report["quotes"]["1499198946"]
+    assert len(quotes) == 3
+    assert [q["rating"] for q in quotes] == [3, 5, 3]
