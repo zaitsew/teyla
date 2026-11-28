@@ -371,11 +371,8 @@ with the feeds that answered on 2026-10-30 (§3): Apple Developer News and Relea
 Newsroom, the HIG pages as JSON, MacStories, Daring Fireball, Nielsen Norman Group, Smashing,
 uxdesign.cc, iOS Dev Weekly, SwiftLee, Swift with Majid, Sarunw, Lenny's Newsletter, and the
 owner's intent file. It writes `~/.teyla/scout/design/<week>.md` with at most 20 items (what
-changed, with URLs). A finding becomes a proposal only when it meets an observed product
-problem: a ledger entry, a capture, or a failed check in the last 30 days. It writes at most
-two proposals a week, each a file with the quote, the source, the proposed wording and the
-problem it meets; a person or a lane opens the PR against `templates/design/` or a product's
-`design/rules/`, and a proposal older than 30 days is deleted. The scout edits no rule.
+changed, with URLs). It writes no proposals (Playbook decision P9: one weekly interrupt); reusable patterns live in
+`teyla playbook` ([PLAYBOOK.md](PLAYBOOK.md)). The scout edits no rule.
 Trends never change a rule on their own. X and the paid libraries (Mobbin, Refero) sit in
 the last section of SOURCES.md, which the scout skips and has no fetcher for, until a §11 yes.
 

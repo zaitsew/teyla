@@ -11,7 +11,7 @@ colours or fonts.
 | The audit | `teyla ux check` |
 | Every screen of a product, captured / expected, and the navigation map | `teyla ux registry check`, `teyla ux atlas`, [ATLAS.md](ATLAS.md) |
 | The pairwise judge, its calibration, and the reference screens to compare against | `teyla ux judge`, [JUDGE.md](JUDGE.md), `templates/design/REFERENCE.md` |
-| What changed in design this week, and at most two proposals for the standard | `teyla scout design`, [SCOUT.md](SCOUT.md), `templates/design/SOURCES.md` |
+| What changed in design this week (a reading file; patterns live in Playbook) | `teyla scout design`, [SCOUT.md](SCOUT.md), `templates/design/SOURCES.md` |
 | The review loop, the drift matrix, the judge, the copy lane and the brand kit: concept, decisions and roadmap | [STUDIO.md](STUDIO.md) |
 
 ## Start a product

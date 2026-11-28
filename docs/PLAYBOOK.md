@@ -59,3 +59,26 @@ The index is built in memory on every call. No index file is written into the ro
 
 A design, copy or growth artifact names the card ids its `brief` returned, or `none fit`. Never paste the library
 whole. A card becomes a `candidate` only when a product already shows the problem; "looks current" is not a problem.
+
+## Where the briefs are used
+
+- `teyla copy brief` adds a "Patterns" section (domains `writing`, `flow`, `ai`, `listing`).
+- `teyla growth draft` passes the `demand` cards to the draft prompt and stores the cited ids on the item as
+  `playbook_cards` (a list of ids, or `["none fit"]`).
+- Design lanes still call `teyla playbook brief` by hand. `teyla scout design` writes a weekly reading file only;
+  it mints no proposal and no card.
+
+## Results for hook cards
+
+A later lane will write `results[]` back to hook cards. Today growth stores no views, likes, replies or clicks per item.
+What exists, in `~/.teyla/growth/` (never in git):
+
+- `items/<id>.json` holds `published_url`, `published_at`, `published_by`, `platform`, `language`, `product`, `format`,
+  `playbook_cards` and an empty `results` object that nothing writes yet.
+- `ledger.jsonl` holds `published` rows (`id`, `product`, `platform`, `language`, `url`) and `attempt` rows of kind
+  `response` (someone answered; `product`, `day`, `n`, `note`). These are counts for the owner's own log, not per-post
+  metrics.
+
+So the write-back needs a source for the numbers (the owner's entry or a platform read) before it can fill a card's
+`results[]` (`growth_item` = the item id, `denominator`, `views`, `saves`, `named_replies`, `visits`, `installs`).
+The link is ready: `items/<id>.json` `playbook_cards` names the hook card, and `published_url` names the post.

@@ -364,6 +364,10 @@ Everything lives in `~/.teyla/growth/` (folders mode 0700, files 0600), never in
 | `targets.toml` | the people and feeds `engage` reads, in four groups |
 | `engage/<day>.json` | the day's engage list, cached |
 
+A drafted item carries `playbook_cards`: the ids of the `demand` cards (hooks and positioning) from `teyla playbook
+brief` that the model says it used, or `["none fit"]`. The draft prompt gets at most 5 cards and 1,500 tokens, and an id
+the brief did not offer is dropped. Older items have no such field. Approval and publishing do not read it.
+
 Item status runs `idea`, `draft`, `checked`, `review`, `approved`, `ready`, `published`; `failed` and `rejected`
 end an item. Only an approved item gets a packet or a published mark.
 

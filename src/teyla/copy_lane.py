@@ -57,7 +57,7 @@ import subprocess
 import sys
 import tempfile
 
-from . import copy_catalogs, copy_lexicon as lex, design_md, invisible, net, state, taste, voice
+from . import copy_catalogs, copy_lexicon as lex, design_md, invisible, net, playbook, state, taste, voice
 
 MODEL = "claude-sonnet-5-5"                   # the ladder's default worker (POLICY section 1)
 # the Codex CLI on the ChatGPT plan refuses gpt-6.2 (2026-11-22); move when `codex` accepts it
@@ -238,6 +238,15 @@ def _load_charts(repo: pathlib.Path, chart: str | None) -> tuple[dict, pathlib.P
     return out, d, notes
 
 
+PATTERN_DOMAINS = ("writing", "flow", "ai", "listing")
+
+
+def patterns_for(product: str, screen_id: str) -> dict:
+    """The Playbook cards that fit this screen (P7): at most 5 cards and 1,500 tokens, or none."""
+    picked = playbook.brief_for(product, screen_id, PATTERN_DOMAINS)
+    return dict(ids=[c.id for c in picked], text=playbook.brief_text(picked))
+
+
 def build_spec(repo: pathlib.Path, screen_id: str, chart: str | None = None) -> dict:
     screen = load_screen(repo, screen_id)
     keys = [str(k) for k in screen.get("string_keys") or []]
@@ -265,7 +274,8 @@ def build_spec(repo: pathlib.Path, screen_id: str, chart: str | None = None) -> 
                 primary_action=str(screen.get("primary_action") or ""), voice_screen=voice_screen, states=states,
                 state_notes={str(k): v for k, v in notes_map.items() if isinstance(v, dict)},
                 design_voice=design_md.voice_text(design), glossary=design_md.glossary(design), charts=charts,
-                catalogs=[c.label for c in catalogs], rows=rows, notes=notes + cnotes)
+                catalogs=[c.label for c in catalogs], rows=rows, notes=notes + cnotes,
+                patterns=patterns_for(repo.name, screen_id))
 
 
 # --- the brief --------------------------------------------------------------------------------------
@@ -309,6 +319,14 @@ def render_brief(spec: dict) -> str:
                  f"{c['accepted']}/{voice.ACCEPTED_MIN} accepted and {c['rejected']}/{voice.REJECTED_MIN} rejected example lines"
                  + ("" if c["complete"] else " (incomplete)")
                  + (f"; banned: {', '.join(c['banned'][:12])}" if c["banned"] else ""))
+    pat = spec.get("patterns") or {}
+    L += ["", "## Patterns"]
+    if pat.get("ids"):
+        L += ["Transferable mechanisms from the Playbook. Copy the mechanism, never the brand or its words; the "
+              "`refuse` line of each card is a ban. When you write the strings, name the card ids you used, or "
+              "\"none fit\", in your output.", "", "```", pat["text"], "```"]
+    else:
+        L.append("Patterns: none fit")
     L += ["", "## Rules and budgets"] + [f"- {r}" for r in RULES]
     L += ["", "## Strings on the screen today", "", "| Key | Control | State | Budget | en | es | ru |", "|---|---|---|---|---|---|---|"]
     for r in spec["rows"]:
@@ -349,7 +367,9 @@ def language_payload(spec: dict, lang: str) -> dict:
                      else dict(text=spec["design_voice"] or "(none: write plainly, in short sentences)", banned=[], preferred=[])),
         rules=RULES,
         rows=[dict(key=r["key"], control=r["control"], state=r["state"], budget=r["budget"], current=r["current"].get(lang) or "")
-              for r in spec["rows"]])
+              for r in spec["rows"]],
+        **({"patterns": dict(cards=spec["patterns"]["text"], note="Copy the mechanism, never the brand or its words; "
+                             "each card's refuse line is a ban.")} if (spec.get("patterns") or {}).get("ids") else {}))
 
 
 def writer_command(model: str) -> list[str]:

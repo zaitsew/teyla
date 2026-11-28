@@ -37,6 +37,8 @@ def _teyla_home_in_tmp(tmp_path_factory, monkeypatch):
     # corrections.grok_headless reads Grok's session store; never this Mac's ~/.grok.
     monkeypatch.setenv("GROK_HOME", str(tmp_path_factory.mktemp("grok-home")))
     monkeypatch.delenv("GROK_SESSION_ID", raising=False)
+    # `teyla playbook brief` reads the owner's card library; a test sees an empty one unless it sets TEYLA_PLAYBOOK_ROOT.
+    monkeypatch.setenv("TEYLA_PLAYBOOK_ROOT", str(tmp_path_factory.mktemp("playbook-root")))
     # The suite runs from inside agent sessions; `startup.in_agent_session` must read as a person's shell unless a test
     # sets one of these itself (a growth log from an agent is only "claimed").
     for var in startup.AGENT_ENV:
