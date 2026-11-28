@@ -292,6 +292,7 @@ mkdir -p "$OUT_DIR"
 "$TEYLA" lang --quiet > "$OUT_DIR/lang.md" 2>&1
 "$TEYLA" reviews --quiet > "$OUT_DIR/reviews.md" 2>&1
 "$TEYLA" scout design --quiet > "$OUT_DIR/scout-design.md" 2>&1
+"$TEYLA" watch > "$OUT_DIR/watch.md" 2>&1
 "$TEYLA" deps --all --quiet > "$OUT_DIR/deps.md" 2>&1
 "$TEYLA" leak --published --quiet > "$OUT_DIR/leak-published.md" 2>&1
 "$TEYLA" freshness --fetch --quiet > "$OUT_DIR/freshness.md" 2>&1

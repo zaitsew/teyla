@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `teyla watch` records weekly App Store listing changes and review samples, deduplicated across storefronts, with local state and a dry run.
+
 ## 0.62.0 — 2026-11-28
 
 - **PR size gate: four fail-open gaps closed.** `gh pr create --head other` (or `owner:other`) is now sized against that branch (the local branch, else `origin/<branch>`), not the current HEAD. A base with a slash (`release/v1`) resolves to its remote ref. `Size-OK:` is read from the parsed `--body` value, `--body-file` file or heredoc, never from the raw command text, and loses its quotes. `gh pr merge <URL>` and `gh pr merge -R owner/repo` size the PR outside a checkout. When a size cannot be computed the call is still allowed, but a row `unsized: <why>` is logged and `teyla monitor` counts it.

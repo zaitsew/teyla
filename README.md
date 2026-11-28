@@ -109,7 +109,7 @@ A *product* is a repo, or a few, that you ship as one thing. `teyla product init
 
 ## Design and taste
 
-`teyla taste add https://example.com "great neutral design"` keeps a design or text you like or dislike as evidence, so agents can learn your taste ([TASTE.md](docs/TASTE.md)). A redesign runs as a *design cycle*: a map of decisions, taken one at a time. Agents write a dossier before any option exists; `teyla design options <product> <id>` puts two or three options in `teyla asks`; `teyla answer <id> <option> <your reason>` stores the pick with your words. `teyla design status <product>` shows the map. [CYCLE.md](templates/design/CYCLE.md) has the steps.
+`teyla taste add https://example.com "great neutral design"` keeps a design or text you like or dislike as evidence, so agents can learn your taste ([TASTE.md](docs/TASTE.md)). [`teyla watch`](docs/WATCH.md) logs listing changes. A redesign runs as a *design cycle*: a map of decisions, taken one at a time. Agents write a dossier before any option exists; `teyla design options <product> <id>` puts two or three options in `teyla asks`; `teyla answer <id> <option> <your reason>` stores the pick with your words. `teyla design status <product>` shows the map. [CYCLE.md](templates/design/CYCLE.md) has the steps.
 
 ## Go-to-market
 
