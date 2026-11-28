@@ -553,6 +553,27 @@ def tokens_of(text: str) -> int:
     return (len(text) + 3) // 4
 
 
+NONE_FIT = "none fit"
+
+
+def brief_for(product: str, surface: str, domains: tuple[str, ...] = (), job: str = "",
+              limit: int = 5, tokens: int = 1500) -> list[Card]:
+    """The cards a lane gets at the task (PLAN P7): the same ranking as `playbook brief`, limited to `domains`
+    (all when empty). A missing or unreadable library is an empty answer, never an error."""
+    try:
+        base = root()
+        cards, _ = load_all(base) if base.exists() else ([], [])
+    except (OSError, CardError):
+        return []
+    if domains:
+        cards = [c for c in cards if c.meta.get("domain") in domains]
+    return brief(cards, product, surface, "", job, max(1, min(limit, 5)), tokens)
+
+
+def brief_text(picked: list[Card]) -> str:
+    return "\n\n".join(render_brief_card(c) for c in picked)
+
+
 # --- commands ------------------------------------------------------------------------------------------
 
 def _slug(s: str) -> str:

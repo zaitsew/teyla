@@ -26,6 +26,11 @@ The brief holds: the screen's job and primary action; its states; the glossary; 
 the rules; and one row per key with the control, the state, the budget and the current text per language. A key that is
 in no catalog gets a note, and the writer still writes it.
 
+A **Patterns** section follows the voice charts: the cards `teyla playbook brief --product <repo> --surface <screen>`
+returns from the `writing`, `flow`, `ai` and `listing` domains (at most 5 cards and 1,500 tokens), or the line
+`Patterns: none fit`. The brief tells the writer to name the card ids it used, or "none fit", in its output. The ids are
+also in the data block (`patterns.ids`). A missing card library is "none fit", never an error.
+
 **Controls and budgets** (from `templates/design/STANDARD.md`):
 
 | control | budget |
