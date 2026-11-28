@@ -48,7 +48,7 @@ cannot show.
 | `add` | scaffolds a `seen` card from flags; refuses a taken id or a card that fails `check` |
 | `list [--domain D] [--status S] [--product P] [--kind K] [--json]` | one line per card |
 | `show <id>` | prints the file; a unique prefix of the id works |
-| `set <id> [status=S] [--from FILE]` | merges fields from a YAML or JSON map, then checks the card at its new stage. A step that skips a stage is refused: seen to candidate to trial to a verdict |
+| `set <id> [status=S] [--from FILE]` | merges fields from a YAML or JSON map, then checks the card at its new stage. A step that skips a stage is refused: seen to candidate to trial to a verdict (a candidate can also go straight to `rejected` or `parked`) |
 | `expire [--apply]` | `seen` after 90 days, `candidate` after 30: status becomes `expired`, the file stays. Without `--apply` it only lists |
 | `brief --product P --surface S [--domain D] [--job J] [--max 5] [--tokens 1500] [--json]` | only `candidate`, `trial` and `adopted` cards. Exact matches on product, surface and job score first, then plain word overlap. At most 5 cards and 1,500 tokens (characters / 4). When nothing scores, it prints `none fit` |
 | `check [PATH]` | validates every card; ids unique; body at most 150 words; folder and file name match the card |

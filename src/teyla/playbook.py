@@ -31,7 +31,7 @@ EXPIRY_DAYS = {"seen": 90, "candidate": 30}
 MAX_BODY_WORDS = 150
 TRANSITIONS = {
     "seen": {"candidate", "rejected", "parked"},
-    "candidate": {"trial", "adopted", "rejected", "parked"},
+    "candidate": {"trial", "rejected", "parked"},
     "trial": {"adopted", "rejected", "inconclusive", "parked"},
     "expired": {"candidate"},
 }
@@ -95,11 +95,16 @@ def _strip_comment(s: str) -> str:
 
 
 def _split_flow(s: str) -> list[str]:
-    parts, cur, quote, depth = [], "", None, 0
+    parts, cur, quote, depth, skip = [], "", None, 0, False
     for ch in s:
-        if quote:
+        if skip:
             cur += ch
-            if ch == quote:
+            skip = False
+        elif quote:
+            cur += ch
+            if ch == "\\" and quote == '"':
+                skip = True
+            elif ch == quote:
                 quote = None
         elif ch in "\"'":
             quote = ch
@@ -356,7 +361,8 @@ def validate(meta: dict) -> list[str]:
                 out.append("card.verdict.result: must equal status")
             if meta.get("status") == "parked" and not v.get("trigger"):
                 out.append("card.verdict: a parked card needs a dated `trigger`")
-        for i, ev in enumerate(meta.get("evidence") or []):
+        evidence = meta.get("evidence")
+        for i, ev in enumerate(evidence if isinstance(evidence, list) else []):
             if isinstance(ev, dict):
                 m = ev.get("media")
                 if isinstance(m, str):

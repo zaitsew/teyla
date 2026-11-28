@@ -346,3 +346,15 @@ def test_set_refuses_a_baseline_on_a_seen_card_and_a_changed_id(root, capsys, tm
 def test_the_default_root_is_the_config_value(monkeypatch, tmp_path):
     monkeypatch.delenv("TEYLA_PLAYBOOK_ROOT", raising=False)
     assert str(pb.root()).endswith("ops/playbook")
+
+
+def test_a_candidate_cannot_be_adopted_without_a_trial(root, capsys, tmp_path):
+    put(root, candidate())
+    v = tmp_path / "v.json"
+    v.write_text(json.dumps({"verdict": VERDICT}))
+    assert run(capsys, "set", "flow-empty-state-next-step", "status=adopted", "--from", str(v))[0] == 1
+
+
+def test_escaped_quotes_in_a_flow_list_and_a_bad_evidence_type():
+    assert pb.parse_yaml('v: ["a\\"b.png", control.png]\n') == {"v": ['a"b.png', "control.png"]}
+    assert any("evidence" in p for p in pb.validate(card(evidence=42)))
