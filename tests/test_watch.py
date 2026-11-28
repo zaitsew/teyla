@@ -82,8 +82,9 @@ def test_safe_mode_and_output_repo_guard(setup, monkeypatch):
     assert not requested and not home.exists()
     home.parent.mkdir()
     (home.parent / ".git").write_text("gitdir: elsewhere")
+    assert len(watch.run(products, "2026-W48", dry=True)["requests"]) == 4
     with pytest.raises(ValueError, match="outside every git"):
-        watch.run(products, "2026-W48", dry=True)
+        watch.run(products, "2026-W48")
 
 
 def test_lists_contract_and_frontier(tmp_path, monkeypatch):
@@ -169,3 +170,22 @@ def test_quote_sample_spans_ratings_before_repeating_one(setup, monkeypatch):
     quotes = report["quotes"]["1499198946"]
     assert len(quotes) == 3
     assert [q["rating"] for q in quotes] == [3, 5, 3]
+
+
+def test_later_product_and_frontier_replay_weekly_changes(setup):
+    _, products, active, _ = setup
+    a = {**products[0], "name": "a"}
+    b = {**products[0], "name": "b", "storefronts": ["us"]}
+    frontier = {**products[0], "name": "frontier", "storefronts": ["us"]}
+    watch.run([a, b, frontier], "2026-W47")
+    active[0] = "week-two"
+    first = watch.run([a], "2026-W48")
+    expected = {c["field"] for c in first["products"][0]["changes"]}
+    assert expected == {"version", "releaseNotes", "description", "screenshotUrls"}
+    for later in (b, frontier):
+        report = watch.run([later], "2026-W48")
+        result = next(p for p in report["products"] if p["name"] == later["name"])
+        assert {c["field"] for c in result["changes"]} == expected
+        assert len(result["changes"]) == 4
+        assert all(c["storefronts"] == ["us"] for c in result["changes"])
+        assert len(report["quotes"]["1499198946"]) == 3

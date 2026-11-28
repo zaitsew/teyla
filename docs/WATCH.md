@@ -41,7 +41,7 @@ Output lives under `~/.teyla/watch/` (`TEYLA_HOME` relocates Teyla state):
 - `<week>.json`: full weekly observations, including changes omitted from the short Markdown report.
 - `log.jsonl`: one appended record per completed run.
 
-A repeated run preserves earlier changes and quotes for that week. A failed request leaves its previous baseline intact.
+A repeated run preserves earlier changes and quotes for that week. Later product or frontier runs receive that week's recorded changes for their apps and storefronts. A failed request leaves its previous baseline intact.
 Failures appear in the report and return exit code 1. An empty watch list returns 0.
 `--json` prints structured output. `--week YYYY-Www` labels the current observations; Apple supplies no historical snapshot.
 
@@ -53,6 +53,9 @@ No session, repository content, watch-list reason or personal data is sent.
 No listing page, screenshot, `url` field, model or paid source is fetched.
 Requests use HTTPS, a 15-second timeout and a 4 MB response cap.
 Redirects must stay on Apple's Lookup or customer-review endpoints.
+
+Actual output must be outside every Git checkout. If your home is a dotfiles checkout, set `TEYLA_HOME` outside it.
+`--dry` still lists requests in that case because it writes nothing.
 
 `--dry` lists requests and fetches or writes nothing. Safe mode blocks requests unless you pass `--allow-network` by hand.
 The weekly routine calls Watch for product lists beside the design scout. Frontier remains an explicit `--frontier` run. Installing or changing that routine still uses `teyla routine install`.

@@ -225,9 +225,10 @@ def render(report):
 
 
 def run(products, week, dry=False):
-    home = _home()
-    _outside_repo(home / f"{week}.md")
-    _outside_repo(home / f"{week}.json")
+    home = control.home() / "watch" if dry else _home()
+    if not dry:
+        _outside_repo(home / f"{week}.md")
+        _outside_repo(home / f"{week}.json")
     requests = list(dict.fromkeys(url for p in products for row in p["rows"] if row.get("app_store_id") for cc in p["storefronts"] for url in urls(row["app_store_id"], cc)))
     if dry:
         return {"week": week, "requests": requests, "file": str(home / f"{week}.md")}
@@ -235,6 +236,8 @@ def run(products, week, dry=False):
         raise ValueError("network refused")
     weekly_path = home / f"{week}.json"
     previous = _read(weekly_path, {"products": [], "quotes": {}})
+    # A shared baseline must not hide observations from a later --repo or --frontier run.
+    recorded = [change for product in previous["products"] for change in product.get("changes", [])]
     selected_names = {p["name"] for p in products}
     report = {"week": week, "products": [p for p in previous["products"] if p["name"] not in selected_names],
               "quotes": previous.get("quotes", {})}
@@ -265,6 +268,8 @@ def run(products, week, dry=False):
                         errors.append(f"{row['name']} {cc} reviews: {e}")
                     cached[key] = delta, found, errors
                 delta, found, errors = cached[key]
+                result["changes"].extend({**change, "name": row["name"], "storefronts": [cc]}
+                                         for change in recorded if change.get("app_id") == app and cc in change["storefronts"])
                 result["changes"].extend({**change, "app_id": app, "name": row["name"], "storefronts": [cc]} for change in delta)
                 result["errors"].extend(errors)
                 candidates.extend(found)
