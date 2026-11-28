@@ -1,15 +1,14 @@
-"""teyla scout design: sources, feed parsing, the weekly file, proposals and their caps. Feeds are fixtures; `_fetch` and the
-model call are replaced, so nothing here touches the network or starts a real claude."""
+"""teyla scout design: sources, feed parsing, the weekly file and no proposals. Feeds are fixtures; `_fetch` is replaced,
+so nothing here touches the network."""
 from __future__ import annotations
 
 import datetime as dt
 import json
 import pathlib
-import sqlite3
 
 import pytest
 
-from teyla import cli, review, routine_install, scout_design as sd, taste
+from teyla import cli, routine_install, scout_design as sd
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TODAY = dt.date(2026, 10, 30)          # a Friday, ISO week 2026-W44
@@ -76,52 +75,6 @@ def fetched(monkeypatch):
 
     monkeypatch.setattr(sd, "_fetch", fake)
     return calls
-
-
-class FakeModel:
-    def __init__(self, rule="Every empty state names the next step in a verb.", code=0):
-        self.rule, self.code, self.calls = rule, code, []
-
-    def __call__(self, cmd, input_text):
-        self.calls.append((cmd, json.loads(input_text)))
-        if self.code:
-            return self.code, ""
-        body = json.dumps({"rule": self.rule, "why": "The item states the rule the screen broke."})
-        return 0, json.dumps({"type": "result", "is_error": False, "result": body, "total_cost_usd": 0.01})
-
-
-@pytest.fixture
-def model(monkeypatch):
-    m = FakeModel()
-    monkeypatch.setattr(sd, "_run", m)
-    return m
-
-
-COMMENTS = ("The empty state has no next step and the button label is long.",
-            "The tab bar labels are cut off on a small screen.",
-            "Text truncates at the largest Dynamic Type size.")
-
-
-def product(tmp_path, comments=COMMENTS, day="2026-10-20"):
-    repo = tmp_path / "atlas"
-    repo.mkdir(exist_ok=True)
-    (repo / "DESIGN.md").write_text("# Design: Atlas\n")
-    for n, comment in enumerate(comments):
-        did = f"3f9a1c2{n}-5b7e-4d0a-9c1e-2a6b8d4f0e11"
-        taste.write_json(taste.decision_path(repo, did),
-                         {"id": did, "date": day, "screen": "home", "element": "", "comment": comment,
-                          "decision": "rule", "reason": "A pattern.", "scope": "screen:home", "rule": "A rule.",
-                          "capture": "x", "pr": "", "confirmed": False})
-    return repo
-
-
-ORIGINAL_CHECK_PROBLEMS = sd.check_problems
-
-
-@pytest.fixture(autouse=True)
-def no_ux_check(monkeypatch):
-    """Runs see only the decisions a test writes; the ux check problem has its own test."""
-    monkeypatch.setattr(sd, "check_problems", lambda repo, today: [])
 
 
 # --- the sources ----------------------------------------------------------------------------------
@@ -203,12 +156,10 @@ def test_pick_takes_turns_across_sources_dedupes_and_caps_at_20():
 # --- a run ----------------------------------------------------------------------------------------
 
 def run(tmp_path, sources, **kw):
-    if "repos" not in kw:
-        kw["repos"] = [str(product(tmp_path))]
     return sd.run(week=kw.pop("week", None), today=TODAY, sources_file=sources, root=tmp_path / "scout", **kw)
 
 
-def test_a_run_writes_the_weekly_file_with_the_items_in_the_window(tmp_path, sources, fetched, model):
+def test_a_run_writes_the_weekly_file_with_the_items_in_the_window(tmp_path, sources, fetched):
     res = run(tmp_path, sources)
     text = pathlib.Path(res["file"]).read_text()
     assert res["week"] == "2026-W44" and pathlib.Path(res["file"]).name == "2026-W44.md"
@@ -220,128 +171,15 @@ def test_a_run_writes_the_weekly_file_with_the_items_in_the_window(tmp_path, sou
     assert "https://sneaky.example.com/feed.xml" not in fetched and "https://x.com/someone" not in fetched and "https://page.example.com/" not in fetched
 
 
-def test_proposals_need_a_product_problem_and_are_capped_at_two_a_week(tmp_path, sources, fetched, model):
-    res = run(tmp_path, sources)
-    assert len(res["proposals"]) == 2
-    root = tmp_path / "scout" / "proposals"
-    files = sorted(root.glob("*.md"))
-    assert len(files) == 2 and all(f.name.startswith("2026-10-30-") for f in files)
-    body = files[0].read_text() + files[1].read_text()
-    assert "Week: 2026-W44" in body and "> " in body and "## Product problem it meets" in body
-    assert "atlas" in body and "design/decisions/3f9a1c2" in body
-    assert "Every empty state names the next step in a verb." in body and "Source: Example" in body
-    assert "Nothing is applied until a person opens a PR" in body
-    assert len(model.calls) >= 2
-    cmd, payload = model.calls[0]
-    assert cmd[cmd.index("--tools") + 1] == "" and "existing_rules" in payload and payload["problem"]["product"] == "atlas"
-    # a second run in the same week adds nothing: the cap counts the proposals already written
-    again = run(tmp_path, sources)
-    assert again["proposals"] == [] and len(list(root.glob("*.md"))) == 2
-
-
-def test_no_problem_in_the_last_30_days_means_no_proposal(tmp_path, sources, fetched, model):
-    repo = product(tmp_path, day="2026-08-01")
-    res = run(tmp_path, sources, repos=[str(repo)])
-    assert res["proposals"] == [] and res["problems"] == 0 and not model.calls
-    assert "None this run" in pathlib.Path(res["file"]).read_text()
-
-
-def test_a_rejected_decision_is_not_a_problem(tmp_path):
-    repo = product(tmp_path)
-    for p in (repo / "design" / "decisions").glob("*.json"):
-        d = json.loads(p.read_text())
-        d["decision"] = "reject"
-        p.write_text(json.dumps(d))
-    assert sd.decision_problems(repo, TODAY) == []
-
-
-def test_the_model_can_veto_a_match(tmp_path, sources, fetched, monkeypatch):
-    monkeypatch.setattr(sd, "_run", FakeModel(rule=""))
-    res = run(tmp_path, sources)
-    assert res["proposals"] == [] and not list((tmp_path / "scout" / "proposals").glob("*.md"))
-
-
-def test_no_model_writes_the_proposal_without_a_drafted_rule(tmp_path, sources, fetched, monkeypatch):
-    m = FakeModel()
-    monkeypatch.setattr(sd, "_run", m)
-    res = run(tmp_path, sources, use_model=False)
-    assert len(res["proposals"]) == 2 and not m.calls
-    assert "not drafted" in next((tmp_path / "scout" / "proposals").glob("*.md")).read_text()
-
-
-def test_an_unavailable_model_is_asked_once_not_every_time(tmp_path, sources, fetched, monkeypatch):
-    m = FakeModel(code=127)
-    monkeypatch.setattr(sd, "_run", m)
-    res = run(tmp_path, sources)
-    assert len(res["proposals"]) == 2 and len(m.calls) == 1
-
-
-def test_the_scout_edits_no_product_file(tmp_path, sources, fetched, model):
-    repo = product(tmp_path)
-
-    def snapshot():
-        return {str(p.relative_to(repo)): p.read_bytes() for p in sorted(repo.rglob("*")) if p.is_file()}
-
-    before = snapshot()
-    run(tmp_path, sources, repos=[str(repo)])
-    assert snapshot() == before
-
-
-def test_proposals_older_than_30_days_are_deleted_on_the_next_run(tmp_path, sources, fetched, model):
-    d = tmp_path / "scout" / "proposals"
-    d.mkdir(parents=True)
-    old, new, other = d / "2026-09-20-old.md", d / "2026-10-05-new.md", d / "notes.md"
-    for f in (old, new, other):
-        f.write_text("Week: 2026-W40\n")
-    res = run(tmp_path, sources)
-    assert res["pruned"] == ["2026-09-20-old.md"]
-    assert not old.exists() and new.exists() and other.exists()
-    assert "Deleted 1 proposal(s)" in pathlib.Path(res["file"]).read_text()
-
-
-def test_an_item_is_never_proposed_twice(tmp_path, sources, fetched, model):
-    run(tmp_path, sources)
-    scout = tmp_path / "scout"
-    first = {e["url"] for e in sd.existing_proposals(scout)}
-    assert len(first) == 2
-    for f in (scout / "proposals").glob("*.md"):               # pretend they were written in an earlier week
-        f.write_text(f.read_text().replace("Week: 2026-W44", "Week: 2026-W43"))
-    res = run(tmp_path, sources)
-    second = {e["url"] for e in sd.existing_proposals(scout) if e["week"] == "2026-W44"}
-    assert res["proposals"] and second and not (first & second)
-
-
-def test_captures_in_the_review_queue_are_problems_and_the_queue_is_never_created(tmp_path):
-    assert sd.capture_problems(TODAY) == [] and not review.queue_path().exists()
-    conn = review.connect()
-    conn.execute("INSERT INTO captures (id, product, screen, source, comment, status, created_at, imported_at, data, dir) "
-                 "VALUES ('c1c1c1c1-0000-4000-8000-000000000001', 'atlas', 'home', 'relay', 'The tab bar labels are cut off', 'new', "
-                 "'2026-10-25T10:00:00Z', '2026-10-25T10:00:00Z', '{}', '/x')")
-    conn.execute("INSERT INTO captures (id, product, screen, source, comment, status, created_at, imported_at, data, dir) "
-                 "VALUES ('c2c2c2c2-0000-4000-8000-000000000002', 'atlas', 'home', 'relay', 'old comment', 'new', "
-                 "'2026-08-25T10:00:00Z', '2026-08-25T10:00:00Z', '{}', '/x')")
-    conn.close()
-    got = sd.capture_problems(TODAY)
-    assert [g["text"] for g in got] == ["The tab bar labels are cut off"] and got[0]["kind"] == "capture"
-
-
-def test_a_ux_check_fix_is_a_problem(tmp_path):
-    repo = tmp_path / "ui"
-    (repo / "App").mkdir(parents=True)
-    (repo / "App" / "Home.swift").write_text('import SwiftUI\nstruct Home: View { var body: some View { Text("Hi") } }\n')
-    (repo / "DESIGN.md").write_text("# Design\n" + "line\n" * 120)
-    got = ORIGINAL_CHECK_PROBLEMS(repo, TODAY)
-    assert [g["kind"] for g in got] == ["ux check FIX"] and "DESIGN.md" in got[0]["text"]
-
-
-def test_match_needs_a_topic_word_and_one_more(tmp_path):
-    item = {"title": "Tab bars lose their labels", "summary": "Retest the custom tab bar."}
-    assert sd.match(item, {"text": "The tab bar labels are cut off"}) > 0
-    assert sd.match(item, {"text": "The invoice total is wrong"}) == 0
-    assert sd.match({"title": "A long story", "summary": "Nothing about screens."}, {"text": "Story about nothing"}) == 0
-
-
 # --- the command and the routine ------------------------------------------------------------------
+
+def test_the_scout_writes_no_proposal(tmp_path, sources, fetched):
+    res = run(tmp_path, sources)
+    root = tmp_path / "scout"
+    assert "proposals" not in res and not (root / "proposals").exists()
+    assert [p.name for p in root.iterdir()] == ["2026-W44.md"]
+    assert "## Proposals" not in pathlib.Path(res["file"]).read_text()
+
 
 def test_dry_lists_the_urls_and_fetches_nothing(sources, fetched, capsys):
     assert cli.main(["scout", "design", "--sources", str(sources), "--dry"]) == 0
@@ -350,12 +188,11 @@ def test_dry_lists_the_urls_and_fetches_nothing(sources, fetched, capsys):
     assert not fetched
 
 
-def test_cli_writes_the_file_and_prints_one_line(tmp_path, sources, fetched, model, monkeypatch, capsys):
+def test_cli_writes_the_file_and_prints_one_line(tmp_path, sources, fetched, monkeypatch, capsys):
     monkeypatch.setattr(sd, "scout_home", lambda: tmp_path / "scout")
-    repo = product(tmp_path)
-    assert cli.main(["scout", "design", "--sources", str(sources), "--repo", str(repo), "--week", "2026-W44"]) == 0
+    assert cli.main(["scout", "design", "--sources", str(sources), "--week", "2026-W44"]) == 0
     out = capsys.readouterr().out
-    assert out.startswith("2026-W44:") and "proposal(s)" in out
+    assert out.startswith("2026-W44:") and "proposal" not in out
     assert (tmp_path / "scout" / "2026-W44.md").is_file()
 
 
@@ -370,7 +207,7 @@ def test_safe_mode_closes_it_and_quiet_stays_silent(sources, fetched, monkeypatc
 def test_every_source_failing_is_exit_1(tmp_path, sources, monkeypatch, capsys):
     monkeypatch.setattr(sd, "_fetch", lambda url: (_ for _ in ()).throw(OSError("offline")))
     monkeypatch.setattr(sd, "scout_home", lambda: tmp_path / "scout")
-    assert cli.main(["scout", "design", "--sources", str(sources), "--no-model", "--repo", str(tmp_path)]) == 1
+    assert cli.main(["scout", "design", "--sources", str(sources)]) == 1
     assert "no source could be read" in capsys.readouterr().err
 
 
