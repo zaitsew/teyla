@@ -2,6 +2,7 @@
 
     code_root = "~/repos"          where this machine keeps code repos (doctor scans it)
     ops_root  = "~/ops"            the ops root (run artifacts, wiki)
+    playbook_root = "~/ops/playbook"  the playbook cards (`teyla playbook`; env TEYLA_PLAYBOOK_ROOT overrides)
     runs_root = "~/ops/runs"       where the weekly routine files its reports (default: <ops_root>/runs)
     [update]
     repo    = "zaitsew/teyla"      GitHub repo `teyla update` pulls releases from
@@ -181,6 +182,7 @@ CONFIG_PATH = TEYLA_DIR / "config.toml"
 DEFAULTS = {
     "code_root": "~/repos",
     "ops_root": "~/ops",
+    "playbook_root": "~/ops/playbook",
     "runs_root": "",  # empty = <ops_root>/runs (see runs_root())
     "update": {"repo": "zaitsew/teyla", "channel": "release"},
     "env": {},

@@ -160,6 +160,7 @@
   teyla ux judge A.png B.png [--repo R] [--both-orders] [--dry]  which of two screens is better on the five rubric items; --calibrate REPO against your decided pairs
   teyla ux judge --filter VARIANTS --baseline B.png [--repo R]   hold weak variants back from the owner (OpenAI judge, two rounds at most); never ranks
   teyla scout design [--week W] [--dry] [--no-model]            the weekly design scout: what changed, at most two rule proposals
+  teyla playbook add|list|show|set|expire|brief|check ...        best-practice cards in stages; `brief --product P --surface S` gives at most 5 or `none fit`
   teyla hosts [repo...] [--all] [--write] [--json] [--quiet]    every host a repo's code can reach, by file and line, against docs/PRIVACY.md; exit 1 on an undocumented host
   teyla deps [repo] [--all] [--json] [--quiet] [--no-cache] [--dry]   known vulnerabilities in the pinned versions of the lockfiles (OSV); exit 1 on a HIGH/CRITICAL with a fix, 2 on a gap
 """
@@ -714,6 +715,8 @@ def build_parser() -> argparse.ArgumentParser:
     ux_check_mod.register(sp)
     from . import scout_design as scout_design_mod
     scout_design_mod.register(sp)
+    from . import playbook as playbook_mod
+    playbook_mod.register(sp)
     from . import leak as leak_mod
     leak_mod.register(sp)
     from . import hosts as hosts_mod

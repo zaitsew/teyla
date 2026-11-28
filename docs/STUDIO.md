@@ -378,6 +378,9 @@ problem it meets; a person or a lane opens the PR against `templates/design/` or
 `design/rules/`, and a proposal older than 30 days is deleted. The scout edits no rule.
 Trends never change a rule on their own. X and the paid libraries (Mobbin, Refero) sit in
 the last section of SOURCES.md, which the scout skips and has no fetcher for, until a §11 yes.
+
+The playbook (`teyla playbook`, [PLAYBOOK.md](PLAYBOOK.md)) keeps the observations as staged cards and hands a task at most five of them.
+
 Shipped in sprint 1 ([SCOUT.md](SCOUT.md)). The reference library,
 `templates/design/REFERENCE.md`, holds per screen type (onboarding, list, detail, settings,
 chat, voice, timeline) up to three named reference screens with what to copy and a link; the
