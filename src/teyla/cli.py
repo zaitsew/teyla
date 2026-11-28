@@ -717,6 +717,7 @@ def build_parser() -> argparse.ArgumentParser:
     scout_design_mod.register(sp)
     from . import playbook as playbook_mod
     playbook_mod.register(sp)
+    from . import watch as watch_mod; watch_mod.register(sp)
     from . import leak as leak_mod
     leak_mod.register(sp)
     from . import hosts as hosts_mod
